@@ -1,0 +1,7 @@
+.idea
+.venv
+output
+input
+
+*.keras
+*.npz
