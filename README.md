@@ -12,3 +12,19 @@ introduce additional artifacts such as rotation, skew, and distortion.
 In previous research it has been shown that it is possible to restore the 2.5 seconds 12-lead digital ECG
 from paper ECG [[Stenhede 2024]](https://www.cinc.org/archives/2024/pdf/CinC2024-262.pdf) and the aim of this project is to reconstruct the 10 second signal
 from the 2.5 second ECG, which will enhance the usability of historical ECGs.
+
+## Install
+1. Clone the repository:
+    ```shell
+    git clone https://github.com/em0tr/reconstruction-12-lead-from-digitized-paper-ecg.git
+    ```
+2. Create a virtual environment and install required packages:
+    ```shell
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements.txt
+    ```
+3. Create an input directory for the input dataset and put the dataset in that directory:
+    ```shell
+    mkdir input
+    ```
