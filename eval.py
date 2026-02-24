@@ -2,12 +2,16 @@ import neurokit2 as nk
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-import pandas as pd
 
-TOTAL_NUM_LEADS = 12
 SAMPLING_RATE = 500 # Data is retrieved from records500
 DATA_SHAPE = (4368, 5000, 12) # Shape of the original and reconstructed data
-
+LEAD_LABELS = [
+    'I',  'II', 'III',
+    'aVR','aVL','aVF',
+    'V1', 'V2', 'V3',
+    'V4', 'V5', 'V6',
+]
+TOTAL_NUM_LEADS = len(LEAD_LABELS)
 
 def plot_ecg(org_ecg, rec_ecg, ecg_num: int = 0, lead_num: int = 0) -> None:
     """
@@ -18,9 +22,6 @@ def plot_ecg(org_ecg, rec_ecg, ecg_num: int = 0, lead_num: int = 0) -> None:
     :param lead_num: The lead to plot.
     :return: None
     """
-    check_boundaries(org_ecg, ecg_num, lead_num)
-    check_boundaries(rec_ecg, ecg_num, lead_num)
-
     plt.figure(figsize=(10, 5))
     plt.plot(org_ecg[ecg_num, :, lead_num], label='original')
     plt.plot(rec_ecg[ecg_num, :, lead_num], label='reconstructed', alpha=0.7)
@@ -68,7 +69,6 @@ def plot_nk_r_peaks(data, ecg_num: int = 0, lead_num: int = 0, zoom: bool = Fals
     :param zoom_level: The zoom level. A zoom level of 5 will only show 5 peaks.
     :return: None
     """
-    check_boundaries(data, ecg_num, lead_num)
     if data.shape == DATA_SHAPE:
         ecg_signal = get_ecg(data, ecg_num, lead_num)
     else:
@@ -79,7 +79,7 @@ def plot_nk_r_peaks(data, ecg_num: int = 0, lead_num: int = 0, zoom: bool = Fals
     else:
         plot = nk.events_plot(rpeaks['ECG_R_Peaks'], ecg_signal)
     plt.grid()
-    plt.title(f'$R$ peaks of ECG {ecg_num} – Lead {lead_num}')
+    plt.title(f'$R$ peaks of ECG {ecg_num} – Lead {LEAD_LABELS[lead_num]}')
     plt.xlabel('$x$')
     plt.ylabel('$y$')
     plt.show()
@@ -87,7 +87,7 @@ def plot_nk_r_peaks(data, ecg_num: int = 0, lead_num: int = 0, zoom: bool = Fals
 
 def get_ecg(data, ecg_num, lead_num):
     """
-    Get single ECG signal.
+    Get and clean a single ECG signal.
     :param data: The original or reconstructed ECG signal.
     :param ecg_num: The index of the ECG signal.
     :param lead_num: The lead to plot.
@@ -97,8 +97,11 @@ def get_ecg(data, ecg_num, lead_num):
     ::
         ecg_signal = get_ecg(original, 0, 0)
     """
-    return data[ecg_num, :, lead_num]
+    check_boundaries(data, ecg_num, lead_num)
+    ecg = data[ecg_num, :, lead_num]
+    cleaned_ecg = nk.ecg_clean(ecg, sampling_rate=SAMPLING_RATE)
+    return cleaned_ecg
 
 if __name__ == '__main__':
     original, reconstructed = load_data('output/data.npy.npz')
-    plot_nk_r_peaks(original, 0, 0)
+    plot_nk_r_peaks(original, ecg_num=0, lead_num=0)
