@@ -3,5 +3,7 @@
 output
 input
 
+__pycache__/
+
 *.keras
 *.npz
