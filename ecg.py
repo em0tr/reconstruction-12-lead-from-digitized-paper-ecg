@@ -24,11 +24,19 @@ TOTAL_NUM_ECGS = 0
 
 class ECG:
     df_r_peak_mean_data = pd.DataFrame({'Original': [], 'Reconstructed': []})
+    df_t_peak_mean_data = pd.DataFrame({'Original': [], 'Reconstructed': []})
+    df_p_peak_mean_data = pd.DataFrame({'Original': [], 'Reconstructed': []})
+    df_q_peak_mean_data = pd.DataFrame({'Original': [], 'Reconstructed': []})
+    df_s_peak_mean_data = pd.DataFrame({'Original': [], 'Reconstructed': []})
 
     def __init__(self, input_data, type_ecg: TypeECG):
         self.type_ecg = type_ecg
         self.data = self.load_data(input_data)
         self.ecg_r_peaks = {}
+        self.ecg_t_peaks = {}
+        self.ecg_p_peaks = {}
+        self.ecg_q_peaks = {}
+        self.ecg_s_peaks = {}
 
     def get_r_peaks_empty(self):
         """
@@ -52,6 +60,30 @@ class ECG:
             return self.ecg_r_peaks[(ecg_number, slice(None, None, None), lead_number)][r_value]
         # TODO: Maybe redefine the keys for the R-peaks to drop the slice() bit
         return self.ecg_r_peaks[(ecg_number, slice(None, None, None), lead_number)]
+
+    def get_t_peaks(self, ecg_number: int, lead_number: int, t_value: int=None):
+        self.check_boundaries(ecg_number, lead_number)
+        if t_value is not None:
+            return self.ecg_t_peaks[ecg_number, :, lead_number][t_value]
+        return self.ecg_t_peaks[ecg_number, :, lead_number]
+
+    def get_p_peaks(self, ecg_number: int, lead_number: int, p_value: int=None):
+        self.check_boundaries(ecg_number, lead_number)
+        if p_value is not None:
+            return self.ecg_p_peaks[ecg_number, :, lead_number][p_value]
+        return self.ecg_p_peaks[ecg_number, :, lead_number]
+
+    def get_q_peaks(self, ecg_number: int, lead_number: int, q_value: int=None):
+        self.check_boundaries(ecg_number, lead_number)
+        if q_value is not None:
+            return self.ecg_q_peaks[ecg_number, :, lead_number][q_value]
+        return self.ecg_q_peaks[ecg_number, :, lead_number]
+
+    def get_s_peaks(self, ecg_number: int, lead_number: int, s_value: int=None):
+        self.check_boundaries(ecg_number, lead_number)
+        if s_value is not None:
+            return self.ecg_s_peaks[ecg_number, :, lead_number][s_value]
+        return self.ecg_s_peaks[ecg_number, :, lead_number]
 
     def get_shape(self):
         return self.data.shape
@@ -92,7 +124,7 @@ class ECG:
         :param lead_end: The lead end index.
         :return: None
         """
-        print(f'Calculating mean of R-peaks on ECG(s) [{ecg_start} - {ecg_end - 1}] using '
+        print(f'Calculating mean of R-peaks on {self.print_ecg_type()} ECG(s) [{ecg_start} - {ecg_end - 1}] using '
               f'lead(s) [{LEAD_LABELS[lead_start]} - {LEAD_LABELS[lead_end - 1]}]')
         for ecg in range(ecg_start, ecg_end):
             for lead in range(lead_start, lead_end):
@@ -224,8 +256,16 @@ class ECG:
         if not 0 <= lead_num < c:
             raise IndexError(f'Lead number {lead_num} out of range [0, {c - 1}]')
 
+    def print_ecg_type(self):
+        """
+        Print the ECG type where only the first letter is capitalized.
+        :return:
+        """
+        return self.type_ecg.name[0] + self.type_ecg.name[1:].lower()
+
     def find_ecg_peaks(self, ecg_start=0, ecg_end=TOTAL_NUM_ECGS,
-                       lead_start=0, lead_end=TOTAL_NUM_LEADS, use_plotting=False, zoom_level=4):
+                       lead_start=0, lead_end=TOTAL_NUM_LEADS,
+                       use_plotting=False, zoom_level=4, print_peaks=False):
         """
         Find the peaks of the ECG signals.
         :param ecg_start: The start index of the ECG signal.
@@ -234,6 +274,7 @@ class ECG:
         :param lead_end: The end index of the lead.
         :param use_plotting: Plot the ECG peaks.
         :param zoom_level: The zoom level for the plotted ECG peaks.
+        :param print_peaks: Print the different ECG peaks.
         :return: None
         """
         if self.get_r_peaks_empty():
@@ -252,9 +293,22 @@ class ECG:
                                            waves_peak['ECG_S_Peaks'][:zoom_level]],
                                           current_ecg[:(zoom_level + 1) * SAMPLING_RATE])
                     plt.grid(True, alpha=0.3)
-                    plt.title(f'Peaks - {self.type_ecg.name[0] + self.type_ecg.name[1:].lower()} ECG - '
-                              f'{ecg} - Lead {LEAD_LABELS[lead]}')
+                    plt.title(f'Peaks - {self.print_ecg_type()} ECG - {ecg} - Lead {LEAD_LABELS[lead]}')
                     plt.xlabel('Samples')
                     plt.ylabel('Amplitude')
                     plt.tight_layout()
                     plt.show()
+                if print_peaks:
+                    print(f'T-peaks for {self.print_ecg_type()} ECG {ecg} and '
+                          f'lead {LEAD_LABELS[lead]}: {waves_peak["ECG_T_Peaks"]}')
+                    print(f'P-peaks for {self.print_ecg_type()} ECG {ecg} and '
+                          f'lead {LEAD_LABELS[lead]}: {waves_peak["ECG_P_Peaks"]}')
+                    print(f'Q-peaks for {self.print_ecg_type()} ECG {ecg} and '
+                          f'lead {LEAD_LABELS[lead]}: {waves_peak["ECG_Q_Peaks"]}')
+                    print(f'S-peaks for {self.print_ecg_type()} ECG {ecg} and '
+                          f'lead {LEAD_LABELS[lead]}: {waves_peak["ECG_S_Peaks"]}')
+                self.ecg_t_peaks[ecg, :, lead] = waves_peak["ECG_T_Peaks"]
+                self.ecg_p_peaks[ecg, :, lead] = waves_peak["ECG_P_Peaks"]
+                self.ecg_q_peaks[ecg, :, lead] = waves_peak["ECG_Q_Peaks"]
+                self.ecg_s_peaks[ecg, :, lead] = waves_peak["ECG_S_Peaks"]
+
