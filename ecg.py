@@ -1,15 +1,8 @@
 import numpy as np
 import neurokit2 as nk
 import os
-import pandas as pd
 import matplotlib.pyplot as plt
 from enum import Enum
-
-
-class TypeECG(Enum):
-    ORIGINAL = 1
-    RECONSTRUCTED = 2
-
 
 SAMPLING_RATE = 500  # Data is retrieved from records500
 LEAD_LABELS = [
@@ -19,16 +12,15 @@ LEAD_LABELS = [
     'V4', 'V5', 'V6',
 ]
 TOTAL_NUM_LEADS = len(LEAD_LABELS)
-TOTAL_NUM_ECGS = 0
+TOTAL_NUM_ECGS = 0#15#4368
+
+
+class TypeECG(Enum):
+    ORIGINAL = 1
+    RECONSTRUCTED = 2
 
 
 class ECG:
-    df_r_peak_mean_data = pd.DataFrame({'Original': [], 'Reconstructed': []})
-    df_t_peak_mean_data = pd.DataFrame({'Original': [], 'Reconstructed': []})
-    df_p_peak_mean_data = pd.DataFrame({'Original': [], 'Reconstructed': []})
-    df_q_peak_mean_data = pd.DataFrame({'Original': [], 'Reconstructed': []})
-    df_s_peak_mean_data = pd.DataFrame({'Original': [], 'Reconstructed': []})
-
     def __init__(self, input_data, type_ecg: TypeECG):
         self.type_ecg = type_ecg
         self.data = self.load_data(input_data)
@@ -67,7 +59,7 @@ class ECG:
             return self.ecg_t_peaks[ecg_number, :, lead_number][t_value]
         return self.ecg_t_peaks[ecg_number, :, lead_number]
 
-    def get_p_peaks(self, ecg_number: int, lead_number: int, p_value: int=None):
+    def get_p_peaks(self, ecg_number: int, lead_number: int=None, p_value: int=None):
         self.check_boundaries(ecg_number, lead_number)
         if p_value is not None:
             return self.ecg_p_peaks[ecg_number, :, lead_number][p_value]
@@ -111,29 +103,25 @@ class ECG:
                 v = data['original']
             else:
                 v = data['reconstructed']
-            global TOTAL_NUM_ECGS
-            TOTAL_NUM_ECGS = len(v)
         return v
 
-    def find_r_peaks(self, ecg_start=0, ecg_end=TOTAL_NUM_ECGS, lead_start=0, lead_end=TOTAL_NUM_LEADS):
+    def find_r_peaks(self, df, ecg_start=0, ecg_end=TOTAL_NUM_ECGS, lead_start=0, lead_end=TOTAL_NUM_LEADS):
         """
         Find R-peaks for a range of ECGs and leads and store the peaks and mean of peaks.
+        :param df: The dataframe to save the r_peak mean values to.
         :param ecg_start: The start ECG index.
         :param ecg_end: The end ECG index.
         :param lead_start: The lead start index.
         :param lead_end: The lead end index.
         :return: None
         """
-        print(f'Calculating mean of R-peaks on {self.print_ecg_type()} ECG(s) [{ecg_start} - {ecg_end - 1}] using '
+        print(f'Calculating mean of R-peaks on {self.get_ecg_type()} ECG(s) [{ecg_start} - {ecg_end - 1}] using '
               f'lead(s) [{LEAD_LABELS[lead_start]} - {LEAD_LABELS[lead_end - 1]}]')
         for ecg in range(ecg_start, ecg_end):
             for lead in range(lead_start, lead_end):
                 peaks = self.get_r_peaks_from_signal(ecg_num=ecg, lead_num=lead)
                 peak_mean = self.calculate_r_peak_mean(peaks, ecg, lead, print_r_peaks=False, print_mean_values=False)
-                if self.type_ecg == TypeECG.ORIGINAL:
-                    ECG.df_r_peak_mean_data.loc[ecg, 'Original'] = peak_mean
-                else:
-                    ECG.df_r_peak_mean_data.loc[ecg, 'Reconstructed'] = peak_mean
+                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'r_mean'] = peak_mean
 
     def calculate_r_peak_mean(self, peaks, ecg_num, lead_num, print_mean_values=False, print_r_peaks=False):
         """
@@ -145,12 +133,16 @@ class ECG:
         :param print_r_peaks: Print the R-peaks of the original and reconstructed signals.
         :return: The mean of the original and reconstructed signals.
         """
-        mean = np.mean(peaks)
+        mean = self.calculate_mean(peaks)
         if print_r_peaks:
             self.print_peaks(peaks)
         if print_mean_values:
             print(f'Mean value of original R-peaks for ECG {ecg_num} and lead {LEAD_LABELS[lead_num]}: {mean:.4f}')
         return mean
+
+    @staticmethod
+    def calculate_mean(peaks):
+        return np.mean(peaks)
 
     def print_peaks(self, data):
         """
@@ -256,14 +248,14 @@ class ECG:
         if not 0 <= lead_num < c:
             raise IndexError(f'Lead number {lead_num} out of range [0, {c - 1}]')
 
-    def print_ecg_type(self):
+    def get_ecg_type(self):
         """
-        Print the ECG type where only the first letter is capitalized.
+        Print the ECG type where only the first letter is capitalized.4368
         :return:
         """
         return self.type_ecg.name[0] + self.type_ecg.name[1:].lower()
 
-    def find_ecg_peaks(self, ecg_start=0, ecg_end=TOTAL_NUM_ECGS,
+    def find_ecg_peaks(self, df, ecg_start=0, ecg_end=TOTAL_NUM_ECGS,
                        lead_start=0, lead_end=TOTAL_NUM_LEADS,
                        use_plotting=False, zoom_level=4, print_peaks=False):
         """
@@ -285,7 +277,7 @@ class ECG:
                 current_ecg = self.get_ecg(ecg_num=ecg, lead_num=lead)
                 r_peaks = self.get_r_peaks(ecg, lead)
                 _, waves_peak = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
-                                                 method='peak', show=True, show_type='peaks')
+                                                 method='peak', show=False, show_type='peaks')
                 if use_plotting:
                     plot = nk.events_plot([waves_peak['ECG_T_Peaks'][:zoom_level],
                                            waves_peak['ECG_P_Peaks'][:zoom_level],
@@ -293,22 +285,25 @@ class ECG:
                                            waves_peak['ECG_S_Peaks'][:zoom_level]],
                                           current_ecg[:(zoom_level + 1) * SAMPLING_RATE])
                     plt.grid(True, alpha=0.3)
-                    plt.title(f'Peaks - {self.print_ecg_type()} ECG - {ecg} - Lead {LEAD_LABELS[lead]}')
+                    plt.title(f'Peaks - {self.get_ecg_type()} ECG - {ecg} - Lead {LEAD_LABELS[lead]}')
                     plt.xlabel('Samples')
                     plt.ylabel('Amplitude')
                     plt.tight_layout()
                     plt.show()
                 if print_peaks:
-                    print(f'T-peaks for {self.print_ecg_type()} ECG {ecg} and '
+                    print(f'T-peaks for {self.get_ecg_type()} ECG {ecg} and '
                           f'lead {LEAD_LABELS[lead]}: {waves_peak["ECG_T_Peaks"]}')
-                    print(f'P-peaks for {self.print_ecg_type()} ECG {ecg} and '
+                    print(f'P-peaks for {self.get_ecg_type()} ECG {ecg} and '
                           f'lead {LEAD_LABELS[lead]}: {waves_peak["ECG_P_Peaks"]}')
-                    print(f'Q-peaks for {self.print_ecg_type()} ECG {ecg} and '
+                    print(f'Q-peaks for {self.get_ecg_type()} ECG {ecg} and '
                           f'lead {LEAD_LABELS[lead]}: {waves_peak["ECG_Q_Peaks"]}')
-                    print(f'S-peaks for {self.print_ecg_type()} ECG {ecg} and '
+                    print(f'S-peaks for {self.get_ecg_type()} ECG {ecg} and '
                           f'lead {LEAD_LABELS[lead]}: {waves_peak["ECG_S_Peaks"]}')
                 self.ecg_t_peaks[ecg, :, lead] = waves_peak["ECG_T_Peaks"]
                 self.ecg_p_peaks[ecg, :, lead] = waves_peak["ECG_P_Peaks"]
                 self.ecg_q_peaks[ecg, :, lead] = waves_peak["ECG_Q_Peaks"]
                 self.ecg_s_peaks[ecg, :, lead] = waves_peak["ECG_S_Peaks"]
-
+                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 't_mean'] = np.mean(self.ecg_t_peaks[ecg, :, lead])
+                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'p_mean'] = np.mean(self.ecg_p_peaks[ecg, :, lead])
+                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'q_mean'] = np.mean(self.ecg_q_peaks[ecg, :, lead])
+                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 's_mean'] = np.mean(self.ecg_s_peaks[ecg, :, lead])
