@@ -120,10 +120,10 @@ class ECG:
         for ecg in range(ecg_start, ecg_end):
             for lead in range(lead_start, lead_end):
                 _, r_peaks_top = self.get_r_peaks_from_signal(ecg_num=ecg, lead_num=lead)
-                r_peak_top_mean = self.calculate_r_peak_mean(r_peaks_top, ecg, lead, print_r_peaks=False, print_mean_values=False)
+                r_peak_top_mean = self.calculate_peak_mean(r_peaks_top, ecg, lead, print_r_peaks=False, print_mean_values=False)
                 df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'r_peak_mean'] = r_peak_top_mean
 
-    def calculate_r_peak_mean(self, peaks, ecg_num, lead_num, print_mean_values=False, print_r_peaks=False):
+    def calculate_peak_mean(self, peaks, ecg_num, lead_num, print_mean_values=False, print_r_peaks=False):
         """
         Calculate the R-peak mean.
         :param peaks: The R-peaks.
@@ -253,9 +253,8 @@ class ECG:
         return self.type_ecg.name[0] + self.type_ecg.name[1:].lower()
 
     def find_ecg_peaks(self, df, ecg_start=0, ecg_end=TOTAL_NUM_ECGS,
-                       lead_start=0, lead_end=TOTAL_NUM_LEADS,
-                       use_plotting=False, zoom_level=4,
-                       print_peaks=False, use_show=False):
+                       lead_start=0, lead_end=TOTAL_NUM_LEADS, use_plotting=False,
+                       zoom_level=4, print_peaks=False, use_show=False, print_exception=False):
         """
         Find the peaks of the ECG signals.
         :param ecg_start: The start index of the ECG signal.
@@ -301,11 +300,47 @@ class ECG:
                           f'lead {LEAD_LABELS[lead]}: {waves_peak["ECG_Q_Peaks"]}')
                     print(f'S-peaks for {self.get_ecg_type()} ECG {ecg} and '
                           f'lead {LEAD_LABELS[lead]}: {waves_peak["ECG_S_Peaks"]}')
-                self.ecg_t_peaks[ecg, :, lead] = waves_peak["ECG_T_Peaks"]
-                self.ecg_p_peaks[ecg, :, lead] = waves_peak["ECG_P_Peaks"]
-                self.ecg_q_peaks[ecg, :, lead] = waves_peak["ECG_Q_Peaks"]
-                self.ecg_s_peaks[ecg, :, lead] = waves_peak["ECG_S_Peaks"]
-                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 't_mean'] = np.mean(self.ecg_t_peaks[ecg, :, lead])
-                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'p_mean'] = np.mean(self.ecg_p_peaks[ecg, :, lead])
-                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'q_mean'] = np.mean(self.ecg_q_peaks[ecg, :, lead])
-                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 's_mean'] = np.mean(self.ecg_s_peaks[ecg, :, lead])
+                self.value_mean_t(df, ecg, lead, current_ecg, waves_peak, print_exception=False)
+                self.value_mean_p(df, ecg, lead, current_ecg, waves_peak, print_exception=False)
+                self.value_mean_q(df, ecg, lead, current_ecg, waves_peak, print_exception=False)
+                self.value_mean_s(df, ecg, lead, current_ecg, waves_peak, print_exception=False)
+
+    def value_mean_t(self, df, ecg, lead, current_ecg, waves_peak, print_exception=False):
+        try:
+            self.ecg_t_peaks[ecg, :, lead] = waves_peak["ECG_T_Peaks"]
+            t_peak_tops = current_ecg[self.ecg_t_peaks[ecg, :, lead]]
+            t_peak_top_mean = self.calculate_peak_mean(t_peak_tops, ecg, lead)
+            df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 't_mean'] = t_peak_top_mean
+        except IndexError:
+            if print_exception:
+                print(f'Error finding T-peaks for {self.get_ecg_type()} ECG {ecg} and lead {lead}')
+
+    def value_mean_p(self, df, ecg, lead, current_ecg, waves_peak, print_exception=False):
+        try:
+            self.ecg_p_peaks[ecg, :, lead] = waves_peak["ECG_P_Peaks"]
+            p_peak_tops = current_ecg[self.ecg_p_peaks[ecg, :, lead]]
+            p_peak_top_mean = self.calculate_peak_mean(p_peak_tops, ecg, lead)
+            df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'p_mean'] = p_peak_top_mean
+        except IndexError:
+            if print_exception:
+                print(f'Error finding P-peaks for {self.get_ecg_type()} ECG {ecg} and lead {lead}')
+
+    def value_mean_q(self, df, ecg, lead, current_ecg, waves_peak, print_exception=False):
+        try:
+            self.ecg_q_peaks[ecg, :, lead] = waves_peak["ECG_Q_Peaks"]
+            q_peak_tops = current_ecg[self.ecg_q_peaks[ecg, :, lead]]
+            q_peak_top_mean = self.calculate_peak_mean(q_peak_tops, ecg, lead)
+            df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'q_mean'] = q_peak_top_mean
+        except IndexError:
+            if print_exception:
+                print(f'Error finding Q-peaks for {self.get_ecg_type()} ECG {ecg} and lead {lead}')
+
+    def value_mean_s(self, df, ecg, lead, current_ecg, waves_peak, print_exception=False):
+        try:
+            self.ecg_s_peaks[ecg, :, lead] = waves_peak["ECG_S_Peaks"]
+            s_peak_tops = current_ecg[self.ecg_s_peaks[ecg, :, lead]]
+            s_peak_top_mean = self.calculate_peak_mean(s_peak_tops, ecg, lead)
+            df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 's_mean'] = s_peak_top_mean
+        except IndexError:
+            if print_exception:
+                print(f'Error finding S-peaks for {self.get_ecg_type()} ECG {ecg} and lead {lead}')
