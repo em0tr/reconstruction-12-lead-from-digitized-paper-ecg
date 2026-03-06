@@ -43,7 +43,7 @@ def save_dataframe(df, ecg_start, ecg_end, lead_start, lead_end, use_org=False, 
     df.to_csv(create_output_dir() + output_name, index=True)
 
 if __name__ == '__main__':
-    ecg_data = pd.DataFrame({'type': [], 'ecg': [], 'lead': [], 'r_mean': [],
+    ecg_data = pd.DataFrame({'type': [], 'ecg': [], 'lead': [], 'r_peak_mean': [],
                              't_mean': [], 'p_mean': [], 'q_mean': [], 's_mean': []})
     ecg_data = init(ecg_data)
 
@@ -54,7 +54,7 @@ if __name__ == '__main__':
 
     ecg_number = 0
     lead_number = 0
-    TOTAL_NUM_ECGS = 4  # Don't want to go through all ECGs yet
+    TOTAL_NUM_ECGS = 1  # Don't want to go through all ECGs yet
     original.find_r_peaks(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS)
     original.find_ecg_peaks(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS, use_plotting=False, print_peaks=False)
     reconstructed.find_r_peaks(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS)

@@ -119,9 +119,9 @@ class ECG:
               f'lead(s) [{LEAD_LABELS[lead_start]} - {LEAD_LABELS[lead_end - 1]}]')
         for ecg in range(ecg_start, ecg_end):
             for lead in range(lead_start, lead_end):
-                peaks = self.get_r_peaks_from_signal(ecg_num=ecg, lead_num=lead)
-                peak_mean = self.calculate_r_peak_mean(peaks, ecg, lead, print_r_peaks=False, print_mean_values=False)
-                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'r_mean'] = peak_mean
+                _, r_peaks_top = self.get_r_peaks_from_signal(ecg_num=ecg, lead_num=lead)
+                r_peak_top_mean = self.calculate_r_peak_mean(r_peaks_top, ecg, lead, print_r_peaks=False, print_mean_values=False)
+                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'r_peak_mean'] = r_peak_top_mean
 
     def calculate_r_peak_mean(self, peaks, ecg_num, lead_num, print_mean_values=False, print_r_peaks=False):
         """
@@ -133,16 +133,12 @@ class ECG:
         :param print_r_peaks: Print the R-peaks of the original and reconstructed signals.
         :return: The mean of the original and reconstructed signals.
         """
-        mean = self.calculate_mean(peaks)
+        mean = np.mean(peaks)
         if print_r_peaks:
             self.print_peaks(peaks)
         if print_mean_values:
             print(f'Mean value of original R-peaks for ECG {ecg_num} and lead {LEAD_LABELS[lead_num]}: {mean:.4f}')
         return mean
-
-    @staticmethod
-    def calculate_mean(peaks):
-        return np.mean(peaks)
 
     def print_peaks(self, data):
         """
@@ -162,7 +158,7 @@ class ECG:
         :param lead_num: The lead
         :return: The R-peaks from the signal.
         """
-        ecg, signal, r_peaks = self.process_signal(ecg_num, lead_num)
+        ecg, signal, r_peaks, r_peak_tops = self.process_signal(ecg_num, lead_num)
         self.ecg_r_peaks[ecg_num, :, lead_num] = r_peaks["ECG_R_Peaks"]
         if self.type_ecg == TypeECG.ORIGINAL:
             title = f'- Original - ECG {ecg_num} - Lead {LEAD_LABELS[lead_num]}'
@@ -173,7 +169,7 @@ class ECG:
                                   use_plotting=False,
                                   zoom=False,
                                   zoom_level=3)
-        return peaks
+        return peaks, r_peak_tops
 
     @staticmethod
     def plot_r_peaks(ecg_signal, info, title_suffix='', zoom=False, zoom_level=5, use_plotting=False):
@@ -216,7 +212,8 @@ class ECG:
         ecg = self.get_ecg(ecg_num, lead_num)
         ecg, _ = nk.ecg_invert(ecg, sampling_rate=SAMPLING_RATE)
         signals, r_peaks = nk.ecg_process(ecg, sampling_rate=SAMPLING_RATE, method='neurokit')
-        return ecg, signals, r_peaks
+        r_peak_tops = ecg[r_peaks["ECG_R_Peaks"]]
+        return ecg, signals, r_peaks, r_peak_tops
 
     def get_ecg(self, ecg_num: int, lead_num: int):
         """
@@ -257,7 +254,8 @@ class ECG:
 
     def find_ecg_peaks(self, df, ecg_start=0, ecg_end=TOTAL_NUM_ECGS,
                        lead_start=0, lead_end=TOTAL_NUM_LEADS,
-                       use_plotting=False, zoom_level=4, print_peaks=False):
+                       use_plotting=False, zoom_level=4,
+                       print_peaks=False, use_show=False):
         """
         Find the peaks of the ECG signals.
         :param ecg_start: The start index of the ECG signal.
@@ -276,8 +274,12 @@ class ECG:
             for lead in range(lead_start, lead_end):
                 current_ecg = self.get_ecg(ecg_num=ecg, lead_num=lead)
                 r_peaks = self.get_r_peaks(ecg, lead)
-                _, waves_peak = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
-                                                 method='peak', show=False, show_type='peaks')
+                if use_show:
+                    _, waves_peak = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
+                                                     method='peak', show=True, show_type='peaks')
+                else:
+                    _, waves_peak = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
+                                                     method='peak', show=False, show_type='peaks')
                 if use_plotting:
                     plot = nk.events_plot([waves_peak['ECG_T_Peaks'][:zoom_level],
                                            waves_peak['ECG_P_Peaks'][:zoom_level],
