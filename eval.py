@@ -4,6 +4,20 @@ import pandas as pd
 import os
 
 
+columns = {
+    'type': [],
+    'ecg': [],
+    'lead': [],
+    'r_peak_mean': [],
+    't_mean': [],
+    'p_mean': [],
+    'q_mean': [],
+    's_mean': [],
+    'rr_interval_mean': [],
+    'qt_interval_mean': [],
+}
+
+
 def init(df):
     """
     Initialize the dataframe for the mean data points for the ECGs.
@@ -58,21 +72,18 @@ def order_csv_dataframe(ecg_start, ecg_end, lead_start, lead_end):
     assert os.path.isfile(ecg_data_dir + file), f'{file} does not exist'
     df = pd.read_csv(ecg_data_dir + file)
 
-    len_org = ecg_end * lead_end
+    len_org = (ecg_end - ecg_start) * (lead_end - lead_start)
     org_df = df[:len_org:]
     rec_df = df[len_org:]
     org_df['key'] = np.arange(len(org_df))*2
     rec_df['key'] = np.arange(len(rec_df))*2+1
     sorted_df = pd.concat([org_df, rec_df]).sort_values(by=['key']).drop(columns=['key'])
     sorted_df = sorted_df.reset_index(drop=True)
-
     sorted_df.to_csv(ecg_data_dir + 'ordered_' + file, index=False)
 
 
 if __name__ == '__main__':
-    ecg_data = pd.DataFrame({'type': [], 'ecg': [], 'lead': [], 'r_peak_mean': [],
-                             't_mean': [], 'p_mean': [], 'q_mean': [], 's_mean': []})
-    ecg_data = init(ecg_data)
+    ecg_data = init(pd.DataFrame(columns))
     # TODO: Make a container for the data so we don't have to load it twice
     original = ECG('output/data.npy.npz', TypeECG.ORIGINAL)
     reconstructed = ECG('output/data.npy.npz', TypeECG.RECONSTRUCTED)
@@ -80,12 +91,11 @@ if __name__ == '__main__':
 
     ecg_number = 0
     lead_number = 0
-    TOTAL_NUM_ECGS = 2  # Don't want to go through all ECGs yet
-    """
-    original.find_r_peaks(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS)
-    original.find_ecg_peaks(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS, use_plotting=False, print_peaks=False, use_show=False)
-    reconstructed.find_r_peaks(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS)
-    reconstructed.find_ecg_peaks(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS, use_plotting=False, print_peaks=False, use_show=False)
-    save_dataframe(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS)
-    """
-    order_csv_dataframe(ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS)
+    TOTAL_NUM_ECGS = 1  # Don't want to go through all ECGs yet
+    original.find_r_peaks(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, lead_number+1)
+    original.find_ecg_peaks(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, lead_number+1, use_plotting=False, print_peaks=False, use_show=False)
+
+    #reconstructed.find_r_peaks(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, lead_number+1)
+    #reconstructed.find_ecg_peaks(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, lead_number+1, use_plotting=False, print_peaks=False, use_show=False)
+    #save_dataframe(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS)
+    #order_csv_dataframe(ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS)

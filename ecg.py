@@ -119,9 +119,29 @@ class ECG:
               f'lead(s) [{LEAD_LABELS[lead_start]} - {LEAD_LABELS[lead_end - 1]}]')
         for ecg in range(ecg_start, ecg_end):
             for lead in range(lead_start, lead_end):
-                _, r_peaks_top = self.get_r_peaks_from_signal(ecg_num=ecg, lead_num=lead)
+                peaks, r_peaks_top = self.get_r_peaks_from_signal(ecg_num=ecg, lead_num=lead)
                 r_peak_top_mean = self.calculate_peak_mean(r_peaks_top, ecg, lead, print_r_peaks=False, print_mean_values=False)
                 df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'r_peak_mean'] = r_peak_top_mean
+                _, rr_interval_mean = self.calculate_rr_intervals(ecg=ecg, lead=lead, r_peaks=peaks, print_rr_intervals=False)
+                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'rr_interval_mean'] = rr_interval_mean
+
+    def calculate_rr_intervals(self, ecg, lead, r_peaks, print_rr_intervals=False):
+        """
+        Calculate the r-peak intervals for an ECG.
+        :param ecg: The ECG.
+        :param lead: The lead.
+        :param r_peaks: The R-peaks for the ECG.
+        :param print_rr_intervals: Print the RR-intervals and the RR-interval mean.
+        :return:
+        """
+        #hrv = nk.hrv_time(r_peaks, sampling_rate=SAMPLING_RATE, show=True)
+        #print(f'HRV RR-mean: {hrv["HRV_MeanNN"]}')
+        rr_intervals = (np.diff(r_peaks) / SAMPLING_RATE) * 1000 # Multiply by 1000 to convert intervals to milliseconds
+        rr_interval_mean = np.mean(rr_intervals)
+        if print_rr_intervals:
+            print(f'R-R intervals for {self.get_ecg_type()} ECG {ecg} [{LEAD_LABELS[lead]}]: {rr_intervals} ms')
+            print(f'R-R interval mean for {self.get_ecg_type()} ECG {ecg} [{LEAD_LABELS[lead]}]: {rr_interval_mean:.4f} ms')
+        return rr_intervals, rr_interval_mean
 
     def calculate_peak_mean(self, peaks, ecg_num, lead_num, print_mean_values=False, print_r_peaks=False):
         """
@@ -158,7 +178,7 @@ class ECG:
         :param lead_num: The lead
         :return: The R-peaks from the signal.
         """
-        ecg, signal, r_peaks, r_peak_tops = self.process_signal(ecg_num, lead_num)
+        ecg, signal, r_peaks, r_peak_tops = self.process_signal(ecg_num, lead_num, use_segment=True, print_quality=False)
         self.ecg_r_peaks[ecg_num, :, lead_num] = r_peaks["ECG_R_Peaks"]
         if self.type_ecg == TypeECG.ORIGINAL:
             title = f'- Original - ECG {ecg_num} - Lead {LEAD_LABELS[lead_num]}'
@@ -202,16 +222,27 @@ class ECG:
             plt.show()
         return rpeaks
 
-    def process_signal(self, ecg_num, lead_num):
+    def process_signal(self, ecg_num, lead_num, use_segment=False, print_quality=False):
         """
         Process the ECG signal using NeuroKit's preprocessing pipeline.
         :param ecg_num: The index of the ECG signal.
         :param lead_num: The lead.
+        :param use_segment: Segment the signal to a single heartbeat.
+        :param print_quality: Use the ecg_quality function from neurokit2 to assess the quality of the signal.
         :return: A processed ECG signal, its signal information and the R-peaks.
         """
         ecg = self.get_ecg(ecg_num, lead_num)
         ecg, _ = nk.ecg_invert(ecg, sampling_rate=SAMPLING_RATE)
-        signals, r_peaks = nk.ecg_process(ecg, sampling_rate=SAMPLING_RATE, method='neurokit')
+        if print_quality:
+            ecg_quality = nk.ecg_quality(ecg, sampling_rate=SAMPLING_RATE, method='templatematch')
+            print(f'ECG quality (mean±std): {np.mean(ecg_quality):.3f} ± {np.std(ecg_quality):.3f}')
+        signals, r_peaks = nk.ecg_process(ecg, sampling_rate=SAMPLING_RATE, method='pantompkins1985')
+        if use_segment:
+            nk.ecg_segment(ecg, sampling_rate=SAMPLING_RATE, show=True)
+            x = y = 0.02
+            plt.figtext(x, y, f'{self.get_ecg_type()} ECG {ecg_num} Lead {LEAD_LABELS[lead_num]}')
+            plt.grid(True, alpha=0.3)
+            plt.show()
         r_peak_tops = ecg[r_peaks["ECG_R_Peaks"]]
         return ecg, signals, r_peaks, r_peak_tops
 
@@ -228,7 +259,7 @@ class ECG:
         """
         self.check_boundaries(ecg_num, lead_num)
         ecg = self.data[ecg_num, :, lead_num]
-        cleaned_ecg = nk.ecg_clean(ecg, sampling_rate=SAMPLING_RATE)
+        cleaned_ecg = nk.ecg_clean(ecg, sampling_rate=SAMPLING_RATE, method='pantompkins1985')
         return cleaned_ecg
 
     def check_boundaries(self, ecg_num, lead_num) -> None:
@@ -247,10 +278,32 @@ class ECG:
 
     def get_ecg_type(self):
         """
-        Print the ECG type where only the first letter is capitalized.4368
+        Print the ECG type where only the first letter is capitalized.
         :return:
         """
         return self.type_ecg.name[0] + self.type_ecg.name[1:].lower()
+
+    def rr_to_bpm(self, df, ecg_num=0, lead_num=0, print_row=False):
+        """
+        Print the mean heart rate using the RR-mean for an ECG signal.
+        :param df: The dataframe with the RR-interval data.
+        :param ecg_num: The ECG signal index.
+        :param lead_num: The lead.
+        :param print_row: Print more of the dataframe row.
+        :return: None
+        """
+        if self.type_ecg == TypeECG.ORIGINAL:
+            row = df.loc[('Original', ecg_num, LEAD_LABELS[lead_num])]
+        else:
+            row = df.loc[('Reconstructed', ecg_num, LEAD_LABELS[lead_num])]
+        rr_ms = float(row['rr_interval_mean'])
+        hr_bpm = 60000.0 / rr_ms
+        if hr_bpm < 0.0:
+            hr_bpm = float('nan')
+        print(f'{self.get_ecg_type()} ECG {ecg_num} lead {LEAD_LABELS[lead_num]}: '
+              f'RR mean: {rr_ms:.1f} ms - HR mean: {hr_bpm:.1f} BPM')
+        if print_row:
+            print(row)
 
     def find_ecg_peaks(self, df,
                        ecg_start=0, ecg_end=TOTAL_NUM_ECGS,
@@ -280,10 +333,13 @@ class ECG:
                 r_peaks = self.get_r_peaks(ecg, lead)
                 if use_show:
                     _, waves_peak = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
-                                                     method='peak', show=True, show_type='peaks')
+                                                     method='cwt', show=True, show_type='all')
+                    plt.grid(True, alpha=0.3)
+                    plt.title(f'Delineated {self.get_ecg_type()} ECG {ecg} - lead {LEAD_LABELS[lead]}')
+                    plt.show()
                 else:
                     _, waves_peak = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
-                                                     method='peak', show=False, show_type='peaks')
+                                                     method='cwt', show=False, show_type='peaks')
                 if use_plotting:
                     plot = nk.events_plot([waves_peak['ECG_T_Peaks'][:zoom_level],
                                            waves_peak['ECG_P_Peaks'][:zoom_level],
