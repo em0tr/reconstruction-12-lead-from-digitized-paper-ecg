@@ -4,6 +4,7 @@ import os
 import matplotlib.pyplot as plt
 import pandas as pd
 from enum import Enum
+import argparse
 
 columns = {
     'type': [],
@@ -484,20 +485,45 @@ class ECG:
                 print(f'Error finding S-peaks for {self.get_ecg_type()} ECG {ecg} and lead {lead}:\n\t{e}')
 
 
+parameters = {
+
+}
+
+
+def set_parameters(params, args):
+    params['ecg_start'] = args.ecg_start
+    params['ecg_end'] = args.ecg_end
+    params['lead_start'] = args.lead_start
+    params['lead_end'] = args.lead_end
+    params['use_plotting'] = args.use_plotting
+    params['print_peaks'] = args.print_peaks
+
+
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(prog=__name__, description=__doc__)
+    parser.add_argument('--ecg_start', default=0, type=int, help='The starting ECG index')
+    parser.add_argument('--ecg_end', default=TOTAL_NUM_ECGS, type=int, help='The ending ECG index')
+    parser.add_argument('--lead_start', default=0, type=int, help='The starting lead index')
+    parser.add_argument('--lead_end', default=TOTAL_NUM_LEADS, type=int, help='The ending lead index')
+    parser.add_argument('--use_plotting', type=bool, default=False, help='Whether to use plotting or not')
+    parser.add_argument('--print_peaks', type=bool, default=False, help='Use print peaks')
+    arguments = parser.parse_args()
+    print(arguments)
+    set_parameters(parameters, arguments)
+    print(parameters)
+
     ecg_data = init(pd.DataFrame(columns))
     # TODO: Make a container for the data so we don't have to load it twice
     original = ECG('output/data.npy.npz', TypeECG.ORIGINAL)
-    reconstructed = ECG('output/data.npy.npz', TypeECG.RECONSTRUCTED)
-    assert original.__eq__(reconstructed), "Original and reconstructed signals do not match."
+    #reconstructed = ECG('output/data.npy.npz', TypeECG.RECONSTRUCTED)
+    #ssert original.__eq__(reconstructed), "Original and reconstructed signals do not match."
 
-    ecg_number = 0
-    lead_number = 0
-    TOTAL_NUM_ECGS = 1  # Don't want to go through all ECGs yet
-    original.find_r_peaks(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS)
-    original.find_ecg_peaks(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS, use_plotting=True, print_peaks=False, use_show=True)
+    #ecg_number = parameters['start_ecg']
+    #lead_number = parameters['start_lead']
+    #original.find_r_peaks(ecg_data, parameters['ecg_start'], parameters['ecg_end'], parameters['lead_start'], parameters['lead_end'])
+    #original.find_ecg_peaks(ecg_data, parameters['ecg_start'], parameters['ecg_end'], parameters['lead_start'], parameters['lead_end'], parameters['use_plotting'], parameters['print_peaks'], use_show=True)
 
-    reconstructed.find_r_peaks(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS)
-    reconstructed.find_ecg_peaks(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS, use_plotting=True, print_peaks=False, use_show=True)
+    #reconstructed.find_r_peaks(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS)
+    #reconstructed.find_ecg_peaks(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS, use_plotting=True, print_peaks=False, use_show=True)
     #save_dataframe(ecg_data, ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS)
     #order_csv_dataframe(ecg_number, TOTAL_NUM_ECGS, lead_number, TOTAL_NUM_LEADS)
