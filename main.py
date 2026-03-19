@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from enum import Enum
 import argparse
+import warnings
 
 columns = {
     'type': [],
@@ -15,8 +16,9 @@ columns = {
     'p_mean': [],
     'q_mean': [],
     's_mean': [],
-    'rr_interval_mean': [],
-    'qt_interval_mean': [],
+    'rr_interval_mean': [],  # ms
+    'qt_interval_mean': [],  # ms
+    'pr_interval_mean': [],  # ms
 }
 
 
@@ -181,9 +183,9 @@ class ECG:
         :param params: The parameters' dictionary.
         :return: None
         """
-        print(
-            f'Calculating mean of R-peaks on {self.get_ecg_type()} ECG(s) [{params['ecg_start']} - {params['ecg_end'] - 1}] using '
-            f'lead(s) [{LEAD_LABELS[params['lead_start']]} - {LEAD_LABELS[params['lead_end'] - 1]}]')
+        print(f'Calculating mean of R-peaks on {self.get_ecg_type()} ECG(s) [{params['ecg_start']} - '
+              f'{params['ecg_end'] - 1}] using lead(s) [{LEAD_LABELS[params['lead_start']]} - '
+              f'{LEAD_LABELS[params['lead_end'] - 1]}]')
         for ecg in range(params['ecg_start'], params['ecg_end']):
             for lead in range(params['lead_start'], params['lead_end']):
                 peaks, r_peaks_top = self.get_r_peaks_from_signal(params, ecg_num=ecg, lead_num=lead)
@@ -210,8 +212,8 @@ class ECG:
         rr_interval_mean = np.mean(rr_intervals)
         if print_rr_intervals:
             print(f'R-R intervals for {self.get_ecg_type()} ECG {ecg} [{LEAD_LABELS[lead]}]: {rr_intervals} ms')
-            print(
-                f'R-R interval mean for {self.get_ecg_type()} ECG {ecg} [{LEAD_LABELS[lead]}]: {rr_interval_mean:.4f} ms')
+            print(f'R-R interval mean for {self.get_ecg_type()} '
+                  f'ECG {ecg} [{LEAD_LABELS[lead]}]: {rr_interval_mean:.4f} ms')
         return rr_intervals, rr_interval_mean
 
     def calculate_peak_mean(self, peaks, ecg_num, lead_num, print_mean_values=False, print_r_peaks=False):
@@ -385,19 +387,20 @@ class ECG:
                 current_ecg = self.get_ecg(ecg_num=ecg, lead_num=lead, process_method=params['process_method'])
                 r_peaks = self.get_r_peaks(ecg, lead)
                 if params['use_show']:
-                    _, waves_peak = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
+                    _, waves = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
                                                      method=params['delineate_method'], show=True, show_type='all')
                     plt.grid(True, alpha=0.3)
                     plt.title(f'Delineated {self.get_ecg_type()} ECG {ecg} - lead {LEAD_LABELS[lead]}')
                     plt.show()
                 else:
-                    _, waves_peak = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
-                                                     method=params['delineate_method'], show=False, show_type='peaks')
+                    _, waves = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
+                                                     method=params['delineate_method'], show=False, show_type='all')
                 if params['use_plotting']:
-                    nk.events_plot([waves_peak['ECG_T_Peaks'][:params['zoom_level']],
-                                    waves_peak['ECG_P_Peaks'][:params['zoom_level']],
-                                    waves_peak['ECG_Q_Peaks'][:params['zoom_level']],
-                                    waves_peak['ECG_S_Peaks'][:params['zoom_level']]],
+                    nk.events_plot([waves['ECG_T_Peaks'][:params['zoom_level']],
+                                    waves['ECG_P_Peaks'][:params['zoom_level']],
+                                    waves['ECG_Q_Peaks'][:params['zoom_level']],
+                                    waves["ECG_R_Onsets"][:params['zoom_level']],
+                                    waves['ECG_S_Peaks'][:params['zoom_level']]],
                                    current_ecg[:(params['zoom_level'] + 1) * SAMPLING_RATE])
                     plt.grid(True, alpha=0.3)
                     plt.title(f'Peaks - {self.get_ecg_type()} ECG - {ecg} - Lead {LEAD_LABELS[lead]}')
@@ -407,17 +410,88 @@ class ECG:
                     plt.show()
                 if params['print_peaks']:
                     print(f'T-peaks for {self.get_ecg_type()} ECG {ecg} and '
-                          f'lead {LEAD_LABELS[lead]}: {waves_peak["ECG_T_Peaks"]}')
+                          f'lead {LEAD_LABELS[lead]}: {waves["ECG_T_Peaks"]}')
                     print(f'P-peaks for {self.get_ecg_type()} ECG {ecg} and '
-                          f'lead {LEAD_LABELS[lead]}: {waves_peak["ECG_P_Peaks"]}')
+                          f'lead {LEAD_LABELS[lead]}: {waves["ECG_P_Peaks"]}')
                     print(f'Q-peaks for {self.get_ecg_type()} ECG {ecg} and '
-                          f'lead {LEAD_LABELS[lead]}: {waves_peak["ECG_Q_Peaks"]}')
+                          f'lead {LEAD_LABELS[lead]}: {waves["ECG_Q_Peaks"]}')
                     print(f'S-peaks for {self.get_ecg_type()} ECG {ecg} and '
-                          f'lead {LEAD_LABELS[lead]}: {waves_peak["ECG_S_Peaks"]}')
-                self.value_mean_t(df, ecg, lead, current_ecg, waves_peak, print_exception=False)
-                self.value_mean_p(df, ecg, lead, current_ecg, waves_peak, print_exception=False)
-                self.value_mean_q(df, ecg, lead, current_ecg, waves_peak, print_exception=False)
-                self.value_mean_s(df, ecg, lead, current_ecg, waves_peak, print_exception=False)
+                          f'lead {LEAD_LABELS[lead]}: {waves["ECG_S_Peaks"]}')
+                self.value_mean_t(df, ecg, lead, current_ecg, waves, print_exception=False)
+                self.value_mean_p(df, ecg, lead, current_ecg, waves, print_exception=False)
+                self.value_mean_q(df, ecg, lead, current_ecg, waves, print_exception=False)
+                self.value_mean_s(df, ecg, lead, current_ecg, waves, print_exception=False)
+                self.calculate_qt_intervals(df, ecg, lead, waves["ECG_R_Onsets"],
+                                            waves['ECG_T_Offsets'], params['print_mean'])
+                self.calculate_pr_intervals(df, ecg, lead, waves["ECG_P_Onsets"],
+                                            waves['ECG_R_Onsets'], params['print_mean'])
+
+    @staticmethod
+    def convert_array(x):
+        """
+        The list data retrieved from the delineate function needs to be converted to a numpy array for finding intervals.
+        :param x:
+        :return:
+        """
+        arr = np.asarray(x, dtype=float)
+        return arr.ravel()
+
+    def validate_data(self, data1, data2):
+        """
+        When finding intervals, the interval columns must be converted to numpy arrays. Then they are made equal length
+        so that each value in the arrays can be compared. Finally, the arrays are checked for NaN values and all
+        non-NaN values are ignored.
+        :param data1:
+        :param data2:
+        :return:
+        """
+        data1 = self.convert_array(data1)
+        data2 = self.convert_array(data2)
+        min_len = min(len(data1), len(data2))
+        data1 = data1[:min_len]
+        data2 = data2[:min_len]
+
+        valid_mask = (~np.isnan(data1)) & (~np.isnan(data2))
+        samples = data2[valid_mask] - data1[valid_mask]
+        return samples
+
+    def calculate_qt_intervals(self, df, ecg, lead, q_onsets, t_offsets, print_mean):
+        """
+        Calculate the QT intervals using the QRS-onset and T-offset.
+        :param df:
+        :param ecg:
+        :param lead:
+        :param q_onsets:
+        :param t_offsets:
+        :param print_mean:
+        :return:
+        """
+        samples = self.validate_data(q_onsets, t_offsets)
+        qt_ms = (samples / SAMPLING_RATE) * 1000  # Convert to milliseconds
+        qt_mean = np.mean(qt_ms)
+        if print_mean:
+            print(f'QT intervals for {self.get_ecg_type()} ECG {ecg} {LEAD_LABELS[lead]} {qt_ms} (ms):')
+            print(f'QT mean for {self.get_ecg_type()} ECG {ecg} {LEAD_LABELS[lead]}: {qt_mean:.4f} ms')
+        df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'qt_interval_mean'] = qt_mean
+
+    def calculate_pr_intervals(self, df, ecg, lead, p_onsets, q_onsets, print_mean):
+        """
+        Calculate the PR intervals using the P-onset and QRS-onset.
+        :param df:
+        :param ecg:
+        :param lead:
+        :param p_onsets:
+        :param q_onsets:
+        :param print_mean:
+        :return:
+        """
+        samples = self.validate_data(p_onsets, q_onsets)
+        pr_ms = (samples / SAMPLING_RATE) * 1000  # Convert to milliseconds
+        pr_mean = np.mean(pr_ms)
+        if print_mean:
+            print(f'PR intervals for {self.get_ecg_type()} ECG {ecg} {LEAD_LABELS[lead]} {pr_ms} (ms):')
+            print(f'PR mean for {self.get_ecg_type()} ECG {ecg} {LEAD_LABELS[lead]}: {pr_mean:.4f} ms')
+        df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'pr_interval_mean'] = pr_mean
 
     def value_mean_t(self, df, ecg, lead, current_ecg, waves_peak, print_exception=False):
         try:
@@ -461,6 +535,12 @@ class ECG:
 
 
 def set_parameters(params, args):
+    """
+    Set the parameters' dict using the command line arguments.
+    :param params:
+    :param args:
+    :return:
+    """
     params['ecg_start'] = args.ecg_start
     params['ecg_end'] = args.ecg_end
     params['lead_start'] = args.lead_start
@@ -472,13 +552,18 @@ def set_parameters(params, args):
     params['zoom_level'] = args.zoom_level
     params['print_quality'] = args.print_quality
     params['use_segment'] = args.use_segment
+    params['print_mean'] = args.print_mean
     params['save_csv'] = args.save_csv
     params['delineate_method'] = args.delineate_method
     params['process_method'] = args.process_method
     params['quality_method'] = args.quality_method
 
 
-if __name__ == '__main__':
+def parse_arguments():
+    """
+    Parse command line arguments
+    :return:
+    """
     parser = argparse.ArgumentParser(prog=__name__, description='Reconstruction of 12-lead from digitized paper ECG')
     parser.add_argument('--ecg_start', default=0, type=int, help='The starting ECG index')
     parser.add_argument('--ecg_end', default=TOTAL_NUM_ECGS, type=int, help='The ending ECG index')
@@ -491,16 +576,23 @@ if __name__ == '__main__':
     parser.add_argument('--zoom_level', default=5, type=int, help='The level of zoom when plotting')
     parser.add_argument('--print_quality', action='store_true', help='Print the ECG quality')
     parser.add_argument('--use_segment', action='store_true', help='Show ECGs as segments')
+    parser.add_argument('--print_mean', action='store_true',
+                        help='Print the mean values for peaks and intervals')
     parser.add_argument('--save_csv', action='store_true', help='Save the ECGs to a csv file')
     parser.add_argument('--delineate_method', type=str,
-                        choices=['cwt', 'dwt', 'peak'], default='cwt', help='Which delineate method to use')
+                        choices=['cwt', 'dwt'], default='cwt', help='Which delineate method to use')
     parser.add_argument('--process_method', type=str,
                         choices=['neurokit', 'pantompkins1985'], default='pantompkins1985',
                         help='Which process method to use')
     parser.add_argument('--quality_method', type=str,
                         choices=['averageQRS', 'templatematch'], default='templatematch',
                         help='Which quality method to use')
-    arguments = parser.parse_args()
+    args = parser.parse_args()
+    return args
+
+
+if __name__ == '__main__':
+    arguments = parse_arguments()
     parameters = {}
     set_parameters(parameters, arguments)
 
@@ -517,4 +609,6 @@ if __name__ == '__main__':
     reconstructed.find_ecg_peaks(ecg_data, parameters)
     if parameters['save_csv']:
         save_dataframe(ecg_data, parameters)
-        order_csv_dataframe(parameters)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # Ignore SettingWithCopyWarning warnings
+            order_csv_dataframe(parameters)
