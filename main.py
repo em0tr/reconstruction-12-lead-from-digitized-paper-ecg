@@ -386,13 +386,13 @@ class ECG:
                 r_peaks = self.get_r_peaks(ecg, lead)
                 if params['use_show']:
                     _, waves_peak = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
-                                                     method='cwt', show=True, show_type='all')
+                                                     method=params['delineate_method'], show=True, show_type='all')
                     plt.grid(True, alpha=0.3)
                     plt.title(f'Delineated {self.get_ecg_type()} ECG {ecg} - lead {LEAD_LABELS[lead]}')
                     plt.show()
                 else:
                     _, waves_peak = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
-                                                     method='cwt', show=False, show_type='peaks')
+                                                     method=params['delineate_method'], show=False, show_type='peaks')
                 if params['use_plotting']:
                     nk.events_plot([waves_peak['ECG_T_Peaks'][:params['zoom_level']],
                                     waves_peak['ECG_P_Peaks'][:params['zoom_level']],
