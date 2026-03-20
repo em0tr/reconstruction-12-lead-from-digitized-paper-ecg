@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
 import os
 import neurokit2 as nk
 from enum import Enum
@@ -128,8 +127,7 @@ class ECG:
                                                                       print_rr_intervals=False)
                     df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'rr_interval_mean'] = rr_interval_mean
                     df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'success'] = 1
-                except ValueError as e:
-                    print(f'Value error for {self.get_ecg_type()} ECG {ecg} {LEAD_LABELS[lead]}: {e}')
+                except ValueError:
                     df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'success'] = 0
                     continue
 

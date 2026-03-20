@@ -1,9 +1,8 @@
-import numpy as np
-import os
 import pandas as pd
 import argparse
 import warnings
 from ecg import ECG, TOTAL_NUM_ECGS, TOTAL_NUM_LEADS, TypeECG
+from save_data import save_dataframe_csv, order_dataframe, save_to_db, get_ecg_data
 
 columns = {
     'type': [],
@@ -32,47 +31,6 @@ def init(df):
     return df
 
 
-def create_output_dir():
-    output_dir = 'output/'
-    ecg_mean_data_dir = 'ecg_mean_data/'
-    os.makedirs(output_dir, exist_ok=True)
-    os.makedirs(output_dir + ecg_mean_data_dir, exist_ok=True)
-    return output_dir + ecg_mean_data_dir
-
-
-def save_dataframe(df, params):
-    """
-    Save the dataframe to csv file.
-    :param df: The dataframe.
-    :param params: The parameters' dictionary.
-    :return: None
-    """
-    output_name = f'ecg_mean_data_ecg_{params['ecg_start']}_{params['ecg_end']}' \
-                  f'_lead_{params['lead_start']}_{params['lead_end']}.csv'
-    df.to_csv(create_output_dir() + output_name, index=True)
-
-
-def order_csv_dataframe(params):
-    """
-    Reorder the csv dataframe so that it alternates between original and reconstructed ECGs.
-    :param params: The parameters' dictionary.
-    :return:
-    """
-    ecg_data_dir = create_output_dir()
-    file = f'ecg_mean_data_ecg_{params['ecg_start']}_{params['ecg_end']}' \
-           f'_lead_{params['lead_start']}_{params['lead_end']}.csv'
-    assert os.path.isfile(ecg_data_dir + file), f'{file} does not exist'
-    df = pd.read_csv(ecg_data_dir + file)
-
-    len_org = (params['ecg_end'] - params['ecg_start']) * (params['lead_end'] - params['lead_start'])
-    org_df = df[:len_org:]
-    rec_df = df[len_org:]
-    org_df['key'] = np.arange(len(org_df)) * 2
-    rec_df['key'] = np.arange(len(rec_df)) * 2 + 1
-    sorted_df = pd.concat([org_df, rec_df]).sort_values(by=['key']).drop(columns=['key'])
-    sorted_df = sorted_df.reset_index(drop=True)
-    sorted_df.to_csv(ecg_data_dir + 'ordered_' + file, index=False)
-
 def set_parameters(params, args):
     """
     Set the parameters' dict using the command line arguments.
@@ -93,6 +51,7 @@ def set_parameters(params, args):
     params['use_segment'] = args.use_segment
     params['print_mean'] = args.print_mean
     params['save_csv'] = args.save_csv
+    params['save_db'] = args.save_db
     params['delineate_method'] = args.delineate_method
     params['process_method'] = args.process_method
     params['quality_method'] = args.quality_method
@@ -119,6 +78,7 @@ def parse_arguments():
     parser.add_argument('--print_mean', action='store_true',
                         help='Print the mean values for peaks and intervals')
     parser.add_argument('--save_csv', action='store_true', help='Save the ECGs to a csv file')
+    parser.add_argument('--save_db', action='store_true', help='Save the ECGs to an SQLite file')
     parser.add_argument('--delineate_method', type=str,
                         choices=['cwt', 'dwt'], default='cwt', help='Which delineate method to use')
     parser.add_argument('--process_method', type=str,
@@ -133,24 +93,34 @@ def parse_arguments():
     return args
 
 
-if __name__ == '__main__':
-    arguments = parse_arguments()
-    parameters = {}
-    set_parameters(parameters, arguments)
-
+def process_ecgs(params):
     ecg_data = init(pd.DataFrame(columns))
     # TODO: Make a container for the data so we don't have to load it twice
     original = ECG('output/data.npy.npz', TypeECG.ORIGINAL)
     reconstructed = ECG('output/data.npy.npz', TypeECG.RECONSTRUCTED)
     assert original.__eq__(reconstructed), "Original and reconstructed signals do not match."
 
-    original.find_r_peaks(ecg_data, parameters)
-    original.find_ecg_peaks(ecg_data, parameters)
+    original.find_r_peaks(ecg_data, params)
+    original.find_ecg_peaks(ecg_data, params)
 
-    reconstructed.find_r_peaks(ecg_data, parameters)
-    reconstructed.find_ecg_peaks(ecg_data, parameters)
-    if parameters['save_csv']:
-        save_dataframe(ecg_data, parameters)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")  # Ignore SettingWithCopyWarning warnings
-            order_csv_dataframe(parameters)
+    reconstructed.find_r_peaks(ecg_data, params)
+    reconstructed.find_ecg_peaks(ecg_data, params)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # Ignore SettingWithCopyWarning warnings
+        ordered_df = order_dataframe(ecg_data, params)
+
+    if params['save_db']:
+        save_to_db(ordered_df)
+
+    if params['save_csv']:
+        save_dataframe_csv(ordered_df, params)
+
+
+if __name__ == '__main__':
+    arguments = parse_arguments()
+    parameters = {}
+    set_parameters(parameters, arguments)
+
+    process_ecgs(parameters)
+    get_ecg_data()
