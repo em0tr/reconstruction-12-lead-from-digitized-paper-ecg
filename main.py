@@ -11,6 +11,7 @@ columns = {
     'type': [],
     'ecg': [],
     'lead': [],
+    'success': [],  # Some ECGs may not work correctly and cause issues
     'r_peak_mean': [],
     't_mean': [],
     'p_mean': [],
@@ -29,6 +30,7 @@ def init(df):
     :return: An initialized dataframe.
     """
     df['ecg'] = df['ecg'].astype(int)  # The ECG column should be integer and not float
+    df['success'] = df['success'].astype(int)
     df.set_index(['type', 'ecg', 'lead'], inplace=True)  # Use the type, ECG number and lead number as the index
     return df
 
@@ -188,13 +190,19 @@ class ECG:
               f'{LEAD_LABELS[params['lead_end'] - 1]}]')
         for ecg in range(params['ecg_start'], params['ecg_end']):
             for lead in range(params['lead_start'], params['lead_end']):
-                peaks, r_peaks_top = self.get_r_peaks_from_signal(params, ecg_num=ecg, lead_num=lead)
-                r_peak_top_mean = self.calculate_peak_mean(r_peaks_top, ecg, lead, print_r_peaks=False,
-                                                           print_mean_values=False)
-                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'r_peak_mean'] = r_peak_top_mean
-                _, rr_interval_mean = self.calculate_rr_intervals(ecg=ecg, lead=lead, r_peaks=peaks,
-                                                                  print_rr_intervals=False)
-                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'rr_interval_mean'] = rr_interval_mean
+                try:
+                    peaks, r_peaks_top = self.get_r_peaks_from_signal(params, ecg_num=ecg, lead_num=lead)
+                    r_peak_top_mean = self.calculate_peak_mean(r_peaks_top, ecg, lead, print_r_peaks=False,
+                                                               print_mean_values=False)
+                    df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'r_peak_mean'] = r_peak_top_mean
+                    _, rr_interval_mean = self.calculate_rr_intervals(ecg=ecg, lead=lead, r_peaks=peaks,
+                                                                      print_rr_intervals=False)
+                    df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'rr_interval_mean'] = rr_interval_mean
+                    df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'success'] = 1
+                except ValueError as e:
+                    print(f'Value error for {self.get_ecg_type()} ECG {ecg} {LEAD_LABELS[lead]}: {e}')
+                    df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'success'] = 0
+                    continue
 
     def calculate_rr_intervals(self, ecg, lead, r_peaks, print_rr_intervals=False):
         """
@@ -386,6 +394,8 @@ class ECG:
         for ecg in range(params['ecg_start'], params['ecg_end']):
             for lead in range(params['lead_start'], params['lead_end']):
                 current_ecg = self.get_ecg(ecg_num=ecg, lead_num=lead, process_method=params['process_method'])
+                if not df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'success']:
+                    continue
                 r_peaks = self.get_r_peaks(ecg, lead)
                 if params['use_show']:
                     _, waves = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
