@@ -315,7 +315,7 @@ class ECG:
         r_peak_tops = ecg[r_peaks["ECG_R_Peaks"]]
         return ecg, signals, r_peaks, r_peak_tops
 
-    def get_ecg(self, ecg_num: int, lead_num: int, process_method):
+    def get_ecg(self, ecg_num: int, lead_num: int, process_method='pantompkins1985'):
         """
         Get and clean a single ECG signal.
         :param ecg_num: The index of the ECG signal.
@@ -382,6 +382,7 @@ class ECG:
         if self.get_r_peaks_empty():
             print('Finding the ECG peaks requires having the R-peaks, find the R-peaks before the ECG peaks.')
             raise SystemExit
+        is_first = True
         for ecg in range(params['ecg_start'], params['ecg_end']):
             for lead in range(params['lead_start'], params['lead_end']):
                 current_ecg = self.get_ecg(ecg_num=ecg, lead_num=lead, process_method=params['process_method'])
@@ -395,6 +396,9 @@ class ECG:
                 else:
                     _, waves = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
                                                      method=params['delineate_method'], show=False, show_type='all')
+                if params['print_keys'] and is_first:
+                    print(f'Keys in waves dictionary: {sorted(waves.keys())}')
+                is_first = False
                 if params['use_plotting']:
                     nk.events_plot([waves['ECG_T_Peaks'][:params['zoom_level']],
                                     waves['ECG_P_Peaks'][:params['zoom_level']],
@@ -424,7 +428,7 @@ class ECG:
                 self.calculate_qt_intervals(df, ecg, lead, waves["ECG_R_Onsets"],
                                             waves['ECG_T_Offsets'], params['print_mean'])
                 self.calculate_pr_intervals(df, ecg, lead, waves["ECG_P_Onsets"],
-                                            waves['ECG_R_Onsets'], params['print_mean'])
+                                            waves['ECG_R_Onsets'])
 
     @staticmethod
     def convert_array(x):
@@ -474,7 +478,7 @@ class ECG:
             print(f'QT mean for {self.get_ecg_type()} ECG {ecg} {LEAD_LABELS[lead]}: {qt_mean:.4f} ms')
         df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'qt_interval_mean'] = qt_mean
 
-    def calculate_pr_intervals(self, df, ecg, lead, p_onsets, q_onsets, print_mean):
+    def calculate_pr_intervals(self, df, ecg, lead, p_onsets, q_onsets):
         """
         Calculate the PR intervals using the P-onset and QRS-onset.
         :param df:
@@ -482,16 +486,39 @@ class ECG:
         :param lead:
         :param p_onsets:
         :param q_onsets:
-        :param print_mean:
         :return:
         """
-        samples = self.validate_data(p_onsets, q_onsets)
-        pr_ms = (samples / SAMPLING_RATE) * 1000  # Convert to milliseconds
-        pr_mean = np.mean(pr_ms)
-        if print_mean:
-            print(f'PR intervals for {self.get_ecg_type()} ECG {ecg} {LEAD_LABELS[lead]} {pr_ms} (ms):')
-            print(f'PR mean for {self.get_ecg_type()} ECG {ecg} {LEAD_LABELS[lead]}: {pr_mean:.4f} ms')
+        pr_ms = self.pair_pr_intervals(p_onsets, q_onsets, SAMPLING_RATE)
+        pr_mean = float(np.nanmean(pr_ms)) if pr_ms.size else np.nan
         df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'pr_interval_mean'] = pr_mean
+
+    def pair_pr_intervals(self, p_onsets, q_onsets, fs, min_ms=100.0, max_ms=240.0):
+        """
+
+        :param p_onsets:
+        :param q_onsets:
+        :param fs:
+        :param min_ms:
+        :param max_ms:
+        :return:
+        """
+        p_arr = self.convert_array(p_onsets); p_arr = p_arr[~np.isnan(p_arr)]
+        q_arr = self.convert_array(q_onsets); q_arr = q_arr[~np.isnan(q_arr)]
+        if p_arr.size == 0 or q_arr.size == 0:
+            return np.array([], dtype=float)
+        min_gap = int((min_ms/1000.0)*fs)
+        max_gap = int((max_ms/1000.0)*fs)
+        pr_samples = []
+        j = 0
+        for pi in p_arr:
+            while j < q_arr.size and q_arr[j] < pi:
+                j += 1
+            if j >= q_arr.size:
+                break
+            gap = q_arr[j] - pi
+            if min_gap <= gap <= max_gap:
+                pr_samples.append(gap)
+        return (np.asarray(pr_samples, dtype=float) / fs) * 1000.0
 
     def value_mean_t(self, df, ecg, lead, current_ecg, waves_peak, print_exception=False):
         try:
@@ -557,6 +584,7 @@ def set_parameters(params, args):
     params['delineate_method'] = args.delineate_method
     params['process_method'] = args.process_method
     params['quality_method'] = args.quality_method
+    params['print_keys'] = args.print_keys
 
 
 def parse_arguments():
@@ -587,6 +615,8 @@ def parse_arguments():
     parser.add_argument('--quality_method', type=str,
                         choices=['averageQRS', 'templatematch'], default='templatematch',
                         help='Which quality method to use')
+    parser.add_argument('--print_keys', action='store_true',
+                        help='After delineating print the keys in the waves dict')
     args = parser.parse_args()
     return args
 
