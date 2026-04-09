@@ -1,3 +1,4 @@
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 import os
@@ -19,7 +20,7 @@ LEAD_LABELS = [
 ]
 
 TOTAL_NUM_LEADS = len(LEAD_LABELS)
-TOTAL_NUM_ECGS = 0
+TOTAL_NUM_ECGS = 4368
 
 class ECG:
     def __init__(self, input_data, type_ecg: TypeECG):
@@ -130,6 +131,8 @@ class ECG:
                 except ValueError:
                     df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'success'] = 0
                     continue
+            if ecg % 100 == 0:
+                print(f'Processed {ecg} ECGs out of {TOTAL_NUM_ECGS} ECGs')
 
     def calculate_rr_intervals(self, ecg, lead, r_peaks, print_rr_intervals=False):
         """
@@ -317,6 +320,9 @@ class ECG:
         if self.get_r_peaks_empty():
             print('Finding the ECG peaks requires having the R-peaks, find the R-peaks before the ECG peaks.')
             raise SystemExit
+        print(f'Finding peaks on {self.get_ecg_type()} ECG(s) [{params['ecg_start']} - '
+              f'{params['ecg_end'] - 1}] using lead(s) [{LEAD_LABELS[params['lead_start']]} - '
+              f'{LEAD_LABELS[params['lead_end'] - 1]}]')
         is_first = True
         for ecg in range(params['ecg_start'], params['ecg_end']):
             for lead in range(params['lead_start'], params['lead_end']):
@@ -366,6 +372,10 @@ class ECG:
                                             waves['ECG_T_Offsets'], params['print_mean'])
                 self.calculate_pr_intervals(df, ecg, lead, waves["ECG_P_Onsets"],
                                             waves['ECG_R_Onsets'])
+                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'ecg_signal'] = json.dumps(current_ecg.tolist())
+                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'r_peaks'] = json.dumps(r_peaks.tolist())
+            if ecg % 100 == 0:
+                print(f'Processed {ecg} ECG peaks out of {TOTAL_NUM_ECGS} ECGs')
 
     @staticmethod
     def convert_array(x):

@@ -1,8 +1,9 @@
 import pandas as pd
 import argparse
-import warnings
 from ecg import ECG, TOTAL_NUM_ECGS, TOTAL_NUM_LEADS, TypeECG
-from save_data import save_dataframe_csv, order_dataframe, save_to_db, get_ecg_data
+import data
+import plots
+import metrics
 
 columns = {
     'type': [],
@@ -38,6 +39,9 @@ def set_parameters(params, args):
     :param args:
     :return:
     """
+    params['process_ecg'] = args.process_ecg
+    params['visualize_ecg'] = args.visualize_ecg
+    params['stats'] = args.stats
     params['ecg_start'] = args.ecg_start
     params['ecg_end'] = args.ecg_end
     params['lead_start'] = args.lead_start
@@ -56,6 +60,8 @@ def set_parameters(params, args):
     params['process_method'] = args.process_method
     params['quality_method'] = args.quality_method
     params['print_keys'] = args.print_keys
+    params['use_subplots'] = args.use_subplots
+    params['save_plots'] = args.save_plots
 
 
 def parse_arguments():
@@ -64,6 +70,10 @@ def parse_arguments():
     :return:
     """
     parser = argparse.ArgumentParser(prog=__name__, description='Reconstruction of 12-lead from digitized paper ECG')
+    parser.add_argument('--process_ecg', action='store_true', help='Process ECGs to find peaks')
+    parser.add_argument('--visualize_ecg', action='store_true', help='Visualize ECGs')
+    parser.add_argument('--stats', action='store_true',
+                        help='Perform calculations on ECGs to see statistical similarities and differences')
     parser.add_argument('--ecg_start', default=0, type=int, help='The starting ECG index')
     parser.add_argument('--ecg_end', default=TOTAL_NUM_ECGS, type=int, help='The ending ECG index')
     parser.add_argument('--lead_start', default=0, type=int, help='The starting lead index')
@@ -74,6 +84,9 @@ def parse_arguments():
     parser.add_argument('--zoom', action='store_true', help='Use zoom when plotting')
     parser.add_argument('--zoom_level', default=5, type=int, help='The level of zoom when plotting')
     parser.add_argument('--print_quality', action='store_true', help='Print the ECG quality')
+    parser.add_argument('--use_subplots', action='store_true',
+                        help='Use subplots to make all leads for an ECG be in a single plot')
+    parser.add_argument('--save_plots', action='store_true', help='Save plots')
     parser.add_argument('--use_segment', action='store_true', help='Show ECGs as segments')
     parser.add_argument('--print_mean', action='store_true',
                         help='Print the mean values for peaks and intervals')
@@ -94,27 +107,59 @@ def parse_arguments():
 
 
 def process_ecgs(params):
+    """
+    Process the ECGs to find R-peaks, other peaks and intervals.
+    :param params:
+    :return:
+    """
     ecg_data = init(pd.DataFrame(columns))
     # TODO: Make a container for the data so we don't have to load it twice
     original = ECG('output/data.npy.npz', TypeECG.ORIGINAL)
-    reconstructed = ECG('output/data.npy.npz', TypeECG.RECONSTRUCTED)
-    assert original.__eq__(reconstructed), "Original and reconstructed signals do not match."
+    #reconstructed = ECG('output/data.npy.npz', TypeECG.RECONSTRUCTED)
+    #assert original.__eq__(reconstructed), "Original and reconstructed signals do not match."
 
     original.find_r_peaks(ecg_data, params)
     original.find_ecg_peaks(ecg_data, params)
 
-    reconstructed.find_r_peaks(ecg_data, params)
-    reconstructed.find_ecg_peaks(ecg_data, params)
+    #reconstructed.find_r_peaks(ecg_data, params)
+    #reconstructed.find_ecg_peaks(ecg_data, params)
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")  # Ignore SettingWithCopyWarning warnings
-        ordered_df = order_dataframe(ecg_data, params)
+    #with warnings.catch_warnings():
+        #warnings.simplefilter("ignore")  # Ignore SettingWithCopyWarning warnings
+        #ordered_df = order_dataframe(ecg_data, params)
+
+    df = data.handle_nan(ecg_data)
 
     if params['save_db']:
-        save_to_db(ordered_df)
+        data.save_to_db(df, ecg_type=TypeECG.ORIGINAL)
 
     if params['save_csv']:
-        save_dataframe_csv(ordered_df, params)
+        data.save_dataframe_csv(df, params)
+
+
+def visualize_ecg(params):
+    #plots.overlay_ecg_signals(params)
+    plots.feature_difference(save_plots=params['save_plots'], plot_type='scatter', min_points=True)
+    #plots.feature_histogram(save_plots=params['save_plots'])
+    #plots.bland_altman_plot(org=org, rec=rec, column='r_peak_mean', save_plots=params['save_plots'])
+    #plots.bland_altman_plot(org=org, rec=rec, column='t_mean', save_plots=params['save_plots'])
+    #plots.bland_altman_plot(org=org, rec=rec, column='p_mean', save_plots=params['save_plots'])
+    #plots.bland_altman_plot(org=org, rec=rec, column='q_mean', save_plots=params['save_plots'])
+    #plots.bland_altman_plot(org=org, rec=rec, column='s_mean', save_plots=params['save_plots'])
+    #plots.bland_altman_plot(org=org, rec=rec, column='rr_interval_mean', save_plots=params['save_plots'])
+    #plots.bland_altman_plot(org=org, rec=rec, column='qt_interval_mean', save_plots=params['save_plots'])
+    #plots.bland_altman_plot(org=org, rec=rec, column='pr_interval_mean', save_plots=params['save_plots'])
+
+
+def stats(params):
+    #p, _ = pearson_correlation(org=org['r_peak_mean'], rec=rec['r_peak_mean'], sig_diff=True)
+    #student_t_test(org=org, rec=rec, column='r_peak_mean', sig_diff=True)
+    #f_test(org=org, rec=rec, column='r_peak_mean', sig_diff=True)
+    #calculate_mae()
+    #calculate_mse()
+    #confidence_interval()
+    metrics.basic_stats(TypeECG.ORIGINAL)
+    metrics.basic_stats(TypeECG.RECONSTRUCTED)
 
 
 if __name__ == '__main__':
@@ -122,5 +167,11 @@ if __name__ == '__main__':
     parameters = {}
     set_parameters(parameters, arguments)
 
-    process_ecgs(parameters)
-    get_ecg_data()
+    if parameters['process_ecg']:
+        process_ecgs(parameters)
+
+    if parameters['stats']:
+        stats(parameters)
+
+    if parameters['visualize_ecg']:
+        visualize_ecg(parameters)
