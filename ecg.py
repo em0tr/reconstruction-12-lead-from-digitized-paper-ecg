@@ -1,9 +1,14 @@
 import json
+import math
+from typing import Any
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 import neurokit2 as nk
 from enum import Enum
+import pandas as pd
+from util import *
+import warnings
 
 
 class TypeECG(Enum):
@@ -11,26 +16,20 @@ class TypeECG(Enum):
     RECONSTRUCTED = 2
 
 
-SAMPLING_RATE = 500  # Data is retrieved from records500
-LEAD_LABELS = [
-    'I', 'II', 'III',
-    'aVR', 'aVL', 'aVF',
-    'V1', 'V2', 'V3',
-    'V4', 'V5', 'V6',
-]
-
-TOTAL_NUM_LEADS = len(LEAD_LABELS)
-TOTAL_NUM_ECGS = 4368
-
 class ECG:
-    def __init__(self, input_data, type_ecg: TypeECG):
+    def __init__(self, input_data: Any, type_ecg: TypeECG, data_column: str=None):
+        """
+
+        :param input_data: The input file, either .npy or .npz.
+        :param type_ecg: If it's original or reconstructed data.
+        :param data_column: If the input data has multiple columns, such as if it contains both the
+            original and reconstructed data, the column to use must be provided. If the input data
+            only has one column, this parameter can be ignored.
+        """
         self.type_ecg = type_ecg
-        self.data = self.load_data(input_data)
+        self.data = self.load_data(input_data, data_column)
         self.ecg_r_peaks = {}
-        self.ecg_t_peaks = {}
-        self.ecg_p_peaks = {}
-        self.ecg_q_peaks = {}
-        self.ecg_s_peaks = {}
+
 
     def get_r_peaks_empty(self):
         """
@@ -52,39 +51,15 @@ class ECG:
         self.check_boundaries(ecg_number, lead_number)
         if r_value is not None:
             return self.ecg_r_peaks[(ecg_number, slice(None, None, None), lead_number)][r_value]
-        # TODO: Maybe redefine the keys for the R-peaks to drop the slice() bit
         return self.ecg_r_peaks[(ecg_number, slice(None, None, None), lead_number)]
-
-    def get_t_peaks(self, ecg_number: int, lead_number: int, t_value: int = None):
-        self.check_boundaries(ecg_number, lead_number)
-        if t_value is not None:
-            return self.ecg_t_peaks[ecg_number, :, lead_number][t_value]
-        return self.ecg_t_peaks[ecg_number, :, lead_number]
-
-    def get_p_peaks(self, ecg_number: int, lead_number: int = None, p_value: int = None):
-        self.check_boundaries(ecg_number, lead_number)
-        if p_value is not None:
-            return self.ecg_p_peaks[ecg_number, :, lead_number][p_value]
-        return self.ecg_p_peaks[ecg_number, :, lead_number]
-
-    def get_q_peaks(self, ecg_number: int, lead_number: int, q_value: int = None):
-        self.check_boundaries(ecg_number, lead_number)
-        if q_value is not None:
-            return self.ecg_q_peaks[ecg_number, :, lead_number][q_value]
-        return self.ecg_q_peaks[ecg_number, :, lead_number]
-
-    def get_s_peaks(self, ecg_number: int, lead_number: int, s_value: int = None):
-        self.check_boundaries(ecg_number, lead_number)
-        if s_value is not None:
-            return self.ecg_s_peaks[ecg_number, :, lead_number][s_value]
-        return self.ecg_s_peaks[ecg_number, :, lead_number]
 
     def get_shape(self):
         return self.data.shape
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool | Exception:
         """
         Compare the shape of the data as both the original and reconstructed data should have the same shape.
+        The shape is the number of ECGs, leads and samples for the ECG objects.
         :param other: The other ECG object.
         :return:
         """
@@ -92,22 +67,39 @@ class ECG:
             return NotImplemented
         return self.get_shape() == other.get_shape()
 
-    def load_data(self, data):
+    @staticmethod
+    def load_data(data: str, data_column: str=None) -> Any | None:
         """
-        Load the data in the data.npy.npz file.
-        :param data: The npy.npz file after running main.ipynb
+        Load data from a .npy or .npz file. If you know the name of the key with the data it can be supplied
+        when creating the ECG object, otherwise it must be supplied manually in the function.
+        :param data: The file with data.
+        :param data_column: The column name of the data. Required if the file contains multiple keys.
         :return: The original or reconstructed data.
         """
         if not os.path.exists(data):
             raise FileNotFoundError(f'File {data} not found.')
-        with np.load(data) as data:
-            if self.type_ecg == TypeECG.ORIGINAL:
-                v = data['original']
-            else:
-                v = data['reconstructed']
-        return v
+        if data.endswith('.npy'):
+            return np.load(data)
+        if data.endswith('.npz'):
+            with np.load(data) as data:
+                try:
+                    if data_column is not None:
+                        v = data[data_column]
+                    else:
+                        keys = data.files
+                        if len(keys) > 1:
+                            print(f'File {data} has multiple keys: {keys}, '
+                                  'the key needs to be specified when creating the ECG object.')
+                            raise KeyError
+                        else:
+                            v = data[keys[0]]
+                except KeyError:
+                    raise KeyError(f'File {data} has the key(s): {data.keys()}')
+            return v
+        print(f'File {data} is of an unrecognized format.')
+        return None
 
-    def find_r_peaks(self, df, params):
+    def find_r_peaks(self, df: pd.DataFrame, params: dict[str, Any], **kwargs) -> None:
         """
         Find R-peaks for a range of ECGs and leads and store the peaks and mean of peaks.
         :param df: The dataframe to save the r_peak mean values to.'
@@ -115,24 +107,28 @@ class ECG:
         :return: None
         """
         print(f'Calculating mean of R-peaks on {self.get_ecg_type()} ECG(s) [{params['ecg_start']} - '
-              f'{params['ecg_end'] - 1}] using lead(s) [{LEAD_LABELS[params['lead_start']]} - '
-              f'{LEAD_LABELS[params['lead_end'] - 1]}]')
-        for ecg in range(params['ecg_start'], params['ecg_end']):
-            for lead in range(params['lead_start'], params['lead_end']):
-                try:
-                    peaks, r_peaks_top = self.get_r_peaks_from_signal(params, ecg_num=ecg, lead_num=lead)
-                    r_peak_top_mean = self.calculate_peak_mean(r_peaks_top, ecg, lead, print_r_peaks=False,
-                                                               print_mean_values=False)
-                    df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'r_peak_mean'] = r_peak_top_mean
-                    _, rr_interval_mean = self.calculate_rr_intervals(ecg=ecg, lead=lead, r_peaks=peaks,
-                                                                      print_rr_intervals=False)
-                    df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'rr_interval_mean'] = rr_interval_mean
-                    df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'success'] = 1
-                except ValueError:
-                    df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'success'] = 0
-                    continue
-            if ecg % 100 == 0:
-                print(f'Processed {ecg} ECGs out of {TOTAL_NUM_ECGS} ECGs')
+              f'{params['ecg_end'] - 1}] using leads {', '.join(LEAD_LABELS)}')
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            for ecg in range(params['ecg_start'], params['ecg_end']):
+                for lead in range(params['lead_start'], params['lead_end']):
+                    try:
+                        peaks, r_peaks_top = self.get_r_peaks_from_signal(params, ecg_num=ecg, lead_num=lead)
+                        r_peak_top_mean = self.calculate_peak_mean(r_peaks_top, ecg, lead, print_r_peaks=False,
+                                                                   print_mean_values=False)
+                        df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'r_peak_mean'] = r_peak_top_mean
+                        _, rr_interval_mean = self.calculate_rr_intervals(ecg=ecg, lead=lead, r_peaks=peaks,
+                                                                          print_rr_intervals=False)
+                        df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'rr_interval_mean'] = rr_interval_mean
+                        df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'success'] = 1
+                    except (ValueError, ZeroDivisionError) as e:
+                        if 'print_exception' in kwargs:
+                            if kwargs['print_exception']:
+                                print(f'Error finding R-peaks for ECG {ecg} lead {LEAD_LABELS[lead]}: {e}')
+                        df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'success'] = 0
+                        continue
+                if ecg % 100 == 0:
+                    print(f'Processed {ecg} ECGs out of {TOTAL_NUM_ECGS} ECGs ({round((ecg/TOTAL_NUM_ECGS)*100)}%)')
 
     def calculate_rr_intervals(self, ecg, lead, r_peaks, print_rr_intervals=False):
         """
@@ -143,16 +139,13 @@ class ECG:
         :param print_rr_intervals: Print the RR-intervals and the RR-interval mean.
         :return:
         """
-        #hrv = nk.hrv_time(r_peaks, sampling_rate=SAMPLING_RATE, show=True)
-        #print(f'HRV RR-mean: {hrv["HRV_MeanNN"]}')
-        rr_intervals = (np.diff(
-            r_peaks) / SAMPLING_RATE) * 1000  # Multiply by 1000 to convert intervals to milliseconds
-        rr_interval_mean = np.mean(rr_intervals)
+        hrv = nk.hrv_time(r_peaks, sampling_rate=SAMPLING_RATE, show=False)
+        rr_interval_mean = np.mean(hrv["HRV_MeanNN"])
         if print_rr_intervals:
-            print(f'R-R intervals for {self.get_ecg_type()} ECG {ecg} [{LEAD_LABELS[lead]}]: {rr_intervals} ms')
+            print(f'R-R intervals for {self.get_ecg_type()} ECG {ecg} [{LEAD_LABELS[lead]}]: {hrv["HRV_MeanNN"]} ms')
             print(f'R-R interval mean for {self.get_ecg_type()} '
                   f'ECG {ecg} [{LEAD_LABELS[lead]}]: {rr_interval_mean:.4f} ms')
-        return rr_intervals, rr_interval_mean
+        return hrv["HRV_MeanNN"], rr_interval_mean
 
     def calculate_peak_mean(self, peaks, ecg_num, lead_num, print_mean_values=False, print_r_peaks=False):
         """
@@ -190,7 +183,7 @@ class ECG:
         :param lead_num: The lead
         :return: The R-peaks from the signal.
         """
-        ecg, signal, r_peaks, r_peak_tops = self.process_signal(ecg_num, lead_num, params)
+        ecg, signal, r_peaks, r_peak_tops = self.process_signal(ecg_num, lead_num, params, print_quality=False)
         self.ecg_r_peaks[ecg_num, :, lead_num] = r_peaks["ECG_R_Peaks"]
         if self.type_ecg == TypeECG.ORIGINAL:
             title = '- Original '
@@ -229,7 +222,7 @@ class ECG:
             plt.show()
         return rpeaks
 
-    def process_signal(self, ecg_num, lead_num, params):
+    def process_signal(self, ecg_num: int, lead_num: int, params: dict[str, Any], **kwargs):
         """
         Process the ECG signal using NeuroKit's preprocessing pipeline.
         :param ecg_num: The index of the ECG signal.
@@ -237,12 +230,17 @@ class ECG:
         :param params: The parameters' dictionary.
         :return: A processed ECG signal, its signal information and the R-peaks.
         """
-        ecg = self.get_ecg(ecg_num, lead_num, params['process_method'])
+        ecg = self.get_ecg(ecg_num, lead_num)
+        ecg = nk.ecg_clean(ecg, sampling_rate=SAMPLING_RATE, method='neurokit')
         ecg, _ = nk.ecg_invert(ecg, sampling_rate=SAMPLING_RATE)
-        if params['print_quality']:
-            ecg_quality = nk.ecg_quality(ecg, sampling_rate=SAMPLING_RATE, method=params['quality_method'])
-            num = f'{self.get_ecg_type()} ECG {ecg_num} {LEAD_LABELS[lead_num]}'
-            print(f'{num} quality (mean±std): {np.mean(ecg_quality):.3f} ± {np.std(ecg_quality):.3f}')
+        if 'print_quality' in kwargs:
+            if kwargs['print_quality']:
+                if 'print_quality_method' in kwargs:
+                    ecg_quality = nk.ecg_quality(ecg, sampling_rate=SAMPLING_RATE, method=kwargs['print_quality_method'])
+                else:
+                    ecg_quality = nk.ecg_quality(ecg, sampling_rate=SAMPLING_RATE, method='templatematch')
+                num = f'{self.get_ecg_type()} ECG {ecg_num} {LEAD_LABELS[lead_num]}'
+                print(f'{num} quality (mean±std): {np.mean(ecg_quality):.3f} ± {np.std(ecg_quality):.3f}')
         signals, r_peaks = nk.ecg_process(ecg, sampling_rate=SAMPLING_RATE, method=params['process_method'])
         if params['use_segment']:
             nk.ecg_segment(ecg, sampling_rate=SAMPLING_RATE, show=True)
@@ -253,12 +251,11 @@ class ECG:
         r_peak_tops = ecg[r_peaks["ECG_R_Peaks"]]
         return ecg, signals, r_peaks, r_peak_tops
 
-    def get_ecg(self, ecg_num: int, lead_num: int, process_method='pantompkins1985'):
+    def get_ecg(self, ecg_num: int, lead_num: int):
         """
         Get and clean a single ECG signal.
         :param ecg_num: The index of the ECG signal.
         :param lead_num: The lead to plot.
-        :param process_method: The process method.
         :return: ECG signal.
 
         Example: To get the first ECG with the first lead of the original data:
@@ -266,9 +263,7 @@ class ECG:
             ecg_signal = original.get_ecg(0, 0)
         """
         self.check_boundaries(ecg_num, lead_num)
-        ecg = self.data[ecg_num, :, lead_num]
-        cleaned_ecg = nk.ecg_clean(ecg, sampling_rate=SAMPLING_RATE, method=process_method)
-        return cleaned_ecg
+        return self.data[ecg_num, :, lead_num]
 
     def check_boundaries(self, ecg_num, lead_num) -> None:
         """
@@ -321,61 +316,64 @@ class ECG:
             print('Finding the ECG peaks requires having the R-peaks, find the R-peaks before the ECG peaks.')
             raise SystemExit
         print(f'Finding peaks on {self.get_ecg_type()} ECG(s) [{params['ecg_start']} - '
-              f'{params['ecg_end'] - 1}] using lead(s) [{LEAD_LABELS[params['lead_start']]} - '
-              f'{LEAD_LABELS[params['lead_end'] - 1]}]')
-        is_first = True
-        for ecg in range(params['ecg_start'], params['ecg_end']):
-            for lead in range(params['lead_start'], params['lead_end']):
-                current_ecg = self.get_ecg(ecg_num=ecg, lead_num=lead, process_method=params['process_method'])
-                if not df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'success']:
-                    continue
-                r_peaks = self.get_r_peaks(ecg, lead)
-                if params['use_show']:
-                    _, waves = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
-                                                     method=params['delineate_method'], show=True, show_type='all')
-                    plt.grid(True, alpha=0.3)
-                    plt.title(f'Delineated {self.get_ecg_type()} ECG {ecg} - lead {LEAD_LABELS[lead]}')
-                    plt.show()
-                else:
-                    _, waves = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
-                                                     method=params['delineate_method'], show=False, show_type='all')
-                if params['print_keys'] and is_first:
-                    print(f'Keys in waves dictionary: {sorted(waves.keys())}')
-                is_first = False
-                if params['use_plotting']:
-                    nk.events_plot([waves['ECG_T_Peaks'][:params['zoom_level']],
-                                    waves['ECG_P_Peaks'][:params['zoom_level']],
-                                    waves['ECG_Q_Peaks'][:params['zoom_level']],
-                                    waves["ECG_R_Onsets"][:params['zoom_level']],
-                                    waves['ECG_S_Peaks'][:params['zoom_level']]],
-                                   current_ecg[:(params['zoom_level'] + 1) * SAMPLING_RATE])
-                    plt.grid(True, alpha=0.3)
-                    plt.title(f'Peaks - {self.get_ecg_type()} ECG - {ecg} - Lead {LEAD_LABELS[lead]}')
-                    plt.xlabel('Samples')
-                    plt.ylabel('Amplitude')
-                    plt.tight_layout()
-                    plt.show()
-                if params['print_peaks']:
-                    print(f'T-peaks for {self.get_ecg_type()} ECG {ecg} and '
-                          f'lead {LEAD_LABELS[lead]}: {waves["ECG_T_Peaks"]}')
-                    print(f'P-peaks for {self.get_ecg_type()} ECG {ecg} and '
-                          f'lead {LEAD_LABELS[lead]}: {waves["ECG_P_Peaks"]}')
-                    print(f'Q-peaks for {self.get_ecg_type()} ECG {ecg} and '
-                          f'lead {LEAD_LABELS[lead]}: {waves["ECG_Q_Peaks"]}')
-                    print(f'S-peaks for {self.get_ecg_type()} ECG {ecg} and '
-                          f'lead {LEAD_LABELS[lead]}: {waves["ECG_S_Peaks"]}')
-                self.value_mean_t(df, ecg, lead, current_ecg, waves, print_exception=False)
-                self.value_mean_p(df, ecg, lead, current_ecg, waves, print_exception=False)
-                self.value_mean_q(df, ecg, lead, current_ecg, waves, print_exception=False)
-                self.value_mean_s(df, ecg, lead, current_ecg, waves, print_exception=False)
-                self.calculate_qt_intervals(df, ecg, lead, waves["ECG_R_Onsets"],
-                                            waves['ECG_T_Offsets'], params['print_mean'])
-                self.calculate_pr_intervals(df, ecg, lead, waves["ECG_P_Onsets"],
-                                            waves['ECG_R_Onsets'])
-                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'ecg_signal'] = json.dumps(current_ecg.tolist())
-                df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'r_peaks'] = json.dumps(r_peaks.tolist())
-            if ecg % 100 == 0:
-                print(f'Processed {ecg} ECG peaks out of {TOTAL_NUM_ECGS} ECGs')
+              f'{params['ecg_end'] - 1}] using leads {', '.join(LEAD_LABELS)}')
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            for ecg in range(params['ecg_start'], params['ecg_end']):
+                for lead in range(params['lead_start'], params['lead_end']):
+                    current_ecg = self.get_ecg(ecg_num=ecg, lead_num=lead)
+                    if not df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'success']:
+                        continue
+                    r_peaks = self.get_r_peaks(ecg, lead)
+                    try:
+                        if params['use_show']:
+                            _, waves = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
+                                                        method=params['delineate_method'], show=True, show_type='all')
+                            plt.grid(True, alpha=0.3)
+                            plt.title(f'Delineated {self.get_ecg_type()} ECG {ecg} - lead {LEAD_LABELS[lead]}')
+                            plt.show()
+                            plt.close()
+                        else:
+                            _, waves = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
+                                                        method=params['delineate_method'], show=False, show_type='all')
+                    except Exception as e:
+                        print(f'Invalid ECG signal index {ecg} {LEAD_LABELS[lead]} out of range: {e}')
+                        continue
+                    if params['use_plotting']:
+                        nk.events_plot([waves['ECG_T_Peaks'][:params['zoom_level']],
+                                        waves['ECG_P_Peaks'][:params['zoom_level']],
+                                        waves['ECG_Q_Peaks'][:params['zoom_level']],
+                                        waves["ECG_R_Onsets"][:params['zoom_level']],
+                                        waves['ECG_S_Peaks'][:params['zoom_level']]],
+                                       current_ecg[:(params['zoom_level'] + 1) * SAMPLING_RATE])
+                        plt.grid(True, alpha=0.3)
+                        plt.title(f'Peaks - {self.get_ecg_type()} ECG - {ecg} - Lead {LEAD_LABELS[lead]}')
+                        plt.xlabel('Samples')
+                        plt.ylabel('Amplitude')
+                        plt.tight_layout()
+                        plt.show()
+                        plt.close()
+                    if params['print_peaks']:
+                        print(f'T-peaks for {self.get_ecg_type()} ECG {ecg} '
+                              f'lead {LEAD_LABELS[lead]}: {waves["ECG_T_Peaks"]}')
+                        print(f'P-peaks for {self.get_ecg_type()} ECG {ecg} '
+                              f'lead {LEAD_LABELS[lead]}: {waves["ECG_P_Peaks"]}')
+                        print(f'Q-peaks for {self.get_ecg_type()} ECG {ecg} '
+                              f'lead {LEAD_LABELS[lead]}: {waves["ECG_Q_Peaks"]}')
+                        print(f'S-peaks for {self.get_ecg_type()} ECG {ecg} '
+                              f'lead {LEAD_LABELS[lead]}: {waves["ECG_S_Peaks"]}')
+                    self.value_mean_t(df, ecg, lead, current_ecg, waves, print_exception=False)
+                    self.value_mean_p(df, ecg, lead, current_ecg, waves, print_exception=False)
+                    self.value_mean_q(df, ecg, lead, current_ecg, waves, print_exception=False)
+                    self.value_mean_s(df, ecg, lead, current_ecg, waves, print_exception=False)
+                    self.calculate_qt_intervals(df, ecg, lead, waves["ECG_R_Onsets"],
+                                                waves['ECG_T_Offsets'], params['print_mean'])
+                    self.calculate_pr_intervals(df, ecg, lead, waves["ECG_P_Onsets"],
+                                                waves['ECG_R_Onsets'])
+                    df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'ecg_signal'] = json.dumps(current_ecg.tolist())
+                    df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'r_peaks'] = json.dumps(r_peaks.tolist())
+                if ecg % 100 == 0:
+                    print(f'Processed {ecg} ECG peaks out of {TOTAL_NUM_ECGS} ECGs ({int((ecg/TOTAL_NUM_ECGS)*100)}%)')
 
     @staticmethod
     def convert_array(x):
@@ -467,42 +465,65 @@ class ECG:
                 pr_samples.append(gap)
         return (np.asarray(pr_samples, dtype=float) / fs) * 1000.0
 
+
+    @staticmethod
+    def nan_threshold(peaks, threshold=0.20) -> list[int]:
+        """
+        If an ECG has any NaNs in the T, P, Q or S column it will lead to NaN in the df/db, so we
+        check for NaN and if it's below a threshold they are dropped, otherwise we keep it in.
+        :param peaks: The list of peaks.
+        :param threshold: The threshold to consider, 20% by default. Must be between 0 and 1.
+        :return:
+        """
+        if not 0 <= threshold <= 1:
+            print(f'Threshold must be between 0 and 1, but got {threshold}, defaulting to 0.20')
+            threshold = 0.20
+        if np.isnan(peaks).any():
+            nan_count = sum(math.isnan(x) for x in peaks if isinstance(x, float))
+            if nan_count / len(peaks) < threshold:
+                peaks = [x for x in peaks if x == x]
+        return peaks
+
     def value_mean_t(self, df, ecg, lead, current_ecg, waves_peak, print_exception=False):
         try:
-            self.ecg_t_peaks[ecg, :, lead] = waves_peak["ECG_T_Peaks"]
-            t_peak_tops = current_ecg[self.ecg_t_peaks[ecg, :, lead]]
+            peaks = waves_peak["ECG_T_Peaks"]
+            peaks = self.nan_threshold(peaks)
+            t_peak_tops = current_ecg[peaks]
             t_peak_top_mean = self.calculate_peak_mean(t_peak_tops, ecg, lead)
             df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 't_mean'] = t_peak_top_mean
         except IndexError as e:
             if print_exception:
-                print(f'Error finding T-peak mean for {self.get_ecg_type()} ECG {ecg} and lead {lead}:\n\t{e}')
+                print(f'Error finding T-peak mean for {self.get_ecg_type()} ECG {ecg} lead {LEAD_LABELS[lead]}:\n\t{e}')
 
     def value_mean_p(self, df, ecg, lead, current_ecg, waves_peak, print_exception=False):
         try:
-            self.ecg_p_peaks[ecg, :, lead] = waves_peak["ECG_P_Peaks"]
-            p_peak_tops = current_ecg[self.ecg_p_peaks[ecg, :, lead]]
+            peaks = waves_peak["ECG_P_Peaks"]
+            peaks = self.nan_threshold(peaks)
+            p_peak_tops = current_ecg[peaks]
             p_peak_top_mean = self.calculate_peak_mean(p_peak_tops, ecg, lead)
             df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'p_mean'] = p_peak_top_mean
         except IndexError as e:
             if print_exception:
-                print(f'Error finding P-peaks for {self.get_ecg_type()} ECG {ecg} and lead {lead}:\n\t{e}')
+                print(f'Error finding P-peaks for {self.get_ecg_type()} ECG {ecg} lead {LEAD_LABELS[lead]}:\n\t{e}')
 
     def value_mean_q(self, df, ecg, lead, current_ecg, waves_peak, print_exception=False):
         try:
-            self.ecg_q_peaks[ecg, :, lead] = waves_peak["ECG_Q_Peaks"]
-            q_peak_tops = current_ecg[self.ecg_q_peaks[ecg, :, lead]]
+            peaks = waves_peak["ECG_Q_Peaks"]
+            peaks = self.nan_threshold(peaks)
+            q_peak_tops = current_ecg[peaks]
             q_peak_top_mean = self.calculate_peak_mean(q_peak_tops, ecg, lead)
             df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'q_mean'] = q_peak_top_mean
         except IndexError as e:
             if print_exception:
-                print(f'Error finding Q-peaks for {self.get_ecg_type()} ECG {ecg} and lead {lead}:\n\t{e}')
+                print(f'Error finding Q-peaks for {self.get_ecg_type()} ECG {ecg} lead {LEAD_LABELS[lead]}:\n\t{e}')
 
     def value_mean_s(self, df, ecg, lead, current_ecg, waves_peak, print_exception=False):
         try:
-            self.ecg_s_peaks[ecg, :, lead] = waves_peak["ECG_S_Peaks"]
-            s_peak_tops = current_ecg[self.ecg_s_peaks[ecg, :, lead]]
+            peaks = waves_peak["ECG_S_Peaks"]
+            peaks = self.nan_threshold(peaks)
+            s_peak_tops = current_ecg[peaks]
             s_peak_top_mean = self.calculate_peak_mean(s_peak_tops, ecg, lead)
             df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 's_mean'] = s_peak_top_mean
         except IndexError as e:
             if print_exception:
-                print(f'Error finding S-peaks for {self.get_ecg_type()} ECG {ecg} and lead {lead}:\n\t{e}')
+                print(f'Error finding S-peaks for {self.get_ecg_type()} ECG {ecg} lead {LEAD_LABELS[lead]}:\n\t{e}')
