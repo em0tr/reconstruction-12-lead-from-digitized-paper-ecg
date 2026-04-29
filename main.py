@@ -1,9 +1,10 @@
 import pandas as pd
 import argparse
-from ecg import ECG, TOTAL_NUM_ECGS, TOTAL_NUM_LEADS, TypeECG
+from ecg import ECG, TOTAL_NUM_ECGS, TOTAL_NUM_LEADS, TypeECG, LEAD_LABELS
 import data
 import plots
 import metrics
+from util import SAMPLING_RATE
 
 columns = {
     'type': [],
@@ -20,8 +21,7 @@ columns = {
     'pr_interval_mean': [],  # ms
 }
 
-
-def init(df):
+def df_init(df: pd.DataFrame) -> pd.DataFrame:
     """
     Initialize the dataframe for the mean data points for the ECGs.
     :param df: The dataframe.
@@ -32,7 +32,7 @@ def init(df):
     return df
 
 
-def set_parameters(params, args):
+def set_parameters(params: dict, args: argparse.Namespace) -> None:
     """
     Set the parameters' dict using the command line arguments.
     :param params:
@@ -62,9 +62,10 @@ def set_parameters(params, args):
     params['print_keys'] = args.print_keys
     params['use_subplots'] = args.use_subplots
     params['save_plots'] = args.save_plots
+    params['split_data'] = args.split_data
 
 
-def parse_arguments():
+def parse_arguments() -> argparse.Namespace:
     """
     Parse command line arguments
     :return:
@@ -102,64 +103,73 @@ def parse_arguments():
                         help='Which quality method to use')
     parser.add_argument('--print_keys', action='store_true',
                         help='After delineating print the keys in the waves dict')
+    parser.add_argument('--split_data', action='store_true')
     args = parser.parse_args()
     return args
 
 
-def process_ecgs(params):
+def process_ecgs(params: dict) -> None:
     """
     Process the ECGs to find R-peaks, other peaks and intervals.
     :param params:
     :return:
     """
-    ecg_data = init(pd.DataFrame(columns))
-    # TODO: Make a container for the data so we don't have to load it twice
-    original = ECG('output/data.npy.npz', TypeECG.ORIGINAL)
-    #reconstructed = ECG('output/data.npy.npz', TypeECG.RECONSTRUCTED)
-    #assert original.__eq__(reconstructed), "Original and reconstructed signals do not match."
+    ecg_data = df_init(pd.DataFrame(columns))
+    ecg_type = TypeECG.RECONSTRUCTED
+    ecg_input = ECG('input/other_project/ECGs.npz', type_ecg=ecg_type)
 
-    original.find_r_peaks(ecg_data, params)
-    original.find_ecg_peaks(ecg_data, params)
+    ecg_input.find_r_peaks(ecg_data, params, print_exception=True)
+    ecg_input.find_ecg_peaks(ecg_data, params)
 
-    #reconstructed.find_r_peaks(ecg_data, params)
-    #reconstructed.find_ecg_peaks(ecg_data, params)
-
-    #with warnings.catch_warnings():
-        #warnings.simplefilter("ignore")  # Ignore SettingWithCopyWarning warnings
-        #ordered_df = order_dataframe(ecg_data, params)
-
-    df = data.handle_nan(ecg_data)
+    df = data.handle_nan(ecg_data, ecg_type=ecg_type)
 
     if params['save_db']:
-        data.save_to_db(df, ecg_type=TypeECG.ORIGINAL)
+        data.save_to_db(df, ecg_type=ecg_type)
 
     if params['save_csv']:
         data.save_dataframe_csv(df, params)
 
 
-def visualize_ecg(params):
-    #plots.overlay_ecg_signals(params)
-    plots.feature_difference(save_plots=params['save_plots'], plot_type='scatter', min_points=True)
-    #plots.feature_histogram(save_plots=params['save_plots'])
-    #plots.bland_altman_plot(org=org, rec=rec, column='r_peak_mean', save_plots=params['save_plots'])
-    #plots.bland_altman_plot(org=org, rec=rec, column='t_mean', save_plots=params['save_plots'])
-    #plots.bland_altman_plot(org=org, rec=rec, column='p_mean', save_plots=params['save_plots'])
-    #plots.bland_altman_plot(org=org, rec=rec, column='q_mean', save_plots=params['save_plots'])
-    #plots.bland_altman_plot(org=org, rec=rec, column='s_mean', save_plots=params['save_plots'])
-    #plots.bland_altman_plot(org=org, rec=rec, column='rr_interval_mean', save_plots=params['save_plots'])
-    #plots.bland_altman_plot(org=org, rec=rec, column='qt_interval_mean', save_plots=params['save_plots'])
-    #plots.bland_altman_plot(org=org, rec=rec, column='pr_interval_mean', save_plots=params['save_plots'])
+def visualize_ecg(params: dict,
+                  overlay: bool=False,
+                  difference: bool=False,
+                  histogram: bool=False,
+                  bland_altman: bool=False
+) -> None:
+    if overlay:
+        plots.overlay_ecg_signals(params, fs=SAMPLING_RATE)
+    if difference:
+        plots.feature_difference(save_plots=params['save_plots'], plot_type='scatter', min_points=True)
+    if histogram:
+        plots.feature_histogram(save_plots=params['save_plots'])
+    if bland_altman:
+        plots.bland_altman_plot(save_plots=params['save_plots'], minimize_points=False, file_type='pdf')
 
 
-def stats(params):
-    #p, _ = pearson_correlation(org=org['r_peak_mean'], rec=rec['r_peak_mean'], sig_diff=True)
+def stats():
+    #metrics.pearson_correlation(sig_diff=True)
+    #metrics.basic_stats(TypeECG.ORIGINAL)
     #student_t_test(org=org, rec=rec, column='r_peak_mean', sig_diff=True)
     #f_test(org=org, rec=rec, column='r_peak_mean', sig_diff=True)
-    #calculate_mae()
-    #calculate_mse()
-    #confidence_interval()
-    metrics.basic_stats(TypeECG.ORIGINAL)
-    metrics.basic_stats(TypeECG.RECONSTRUCTED)
+    #metrics.calculate_mae()
+    metrics.calculate_mse()
+    #metrics.confidence_interval()
+    #metrics.basic_stats(TypeECG.ORIGINAL)
+    #metrics.basic_stats(TypeECG.RECONSTRUCTED)
+
+
+def split_data(ecg_type: TypeECG, num_leads: int=TOTAL_NUM_LEADS) -> None:
+    """
+    Create CSV files for each individual lead.
+    :param ecg_type:
+    :param num_leads: The number of leads in the data.
+    :return:
+    """
+    for lead in range(num_leads):
+        df = data.get_ecg_data(ecg_type=ecg_type, lead=lead)
+        prepend = 'original' if ecg_type == TypeECG.ORIGINAL else 'reconstructed'
+        title = f'{prepend}_lead_{LEAD_LABELS[lead]}'
+        data.save_dataframe_csv(df, parameters, title=title)
 
 
 if __name__ == '__main__':
@@ -171,7 +181,10 @@ if __name__ == '__main__':
         process_ecgs(parameters)
 
     if parameters['stats']:
-        stats(parameters)
+        stats()
 
     if parameters['visualize_ecg']:
-        visualize_ecg(parameters)
+        visualize_ecg(parameters, overlay=False, difference=False, histogram=False, bland_altman=False)
+
+    if parameters['split_data']:
+        split_data(TypeECG.RECONSTRUCTED, num_leads=TOTAL_NUM_LEADS)
