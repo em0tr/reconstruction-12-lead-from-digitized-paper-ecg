@@ -6,7 +6,7 @@ from ecg import TypeECG
 from util import LEAD_LABELS, TOTAL_NUM_LEADS
 
 
-def basic_stats(ecg: TypeECG, round_num: int=4) -> None:
+def basic_stats(ecg: TypeECG, round_num: int=6, split_leads: bool=True) -> None:
     """
     Get basic statistics about the ECG data.
     :param ecg: Original or reconstructed ECG data.
@@ -16,9 +16,19 @@ def basic_stats(ecg: TypeECG, round_num: int=4) -> None:
     features = util.feature_columns()
     name = 'Original' if ecg == TypeECG.ORIGINAL else 'Reconstructed'
     for feature in features:
-        for lead in range(TOTAL_NUM_LEADS):
-            column = get_ecg_data_column(ecg_type=ecg, column=feature, lead=lead)
-            print(f'Statistics for {name} {util.df_column_name(feature)} lead {LEAD_LABELS[lead]}:')
+        if split_leads:
+            for lead in range(TOTAL_NUM_LEADS):
+                column = get_ecg_data_column(ecg_type=ecg, column=feature, lead=lead)
+                print(f'Statistics for {name} {util.df_column_name(feature)} lead {LEAD_LABELS[lead]}:')
+                print(f'Count: {int(column.count().to_numpy()[0])}')
+                print(f'Mean: {np.round(column.mean().to_numpy()[0], round_num)}')
+                print(f'Mode: {np.round(column.mode().to_numpy(), round_num)}')
+                print(f'Median: {np.round(column.median().to_numpy()[0], round_num)}')
+                print(f'Variance: {np.round(column.var().to_numpy()[0], round_num)}')
+                print(f'Standard Deviation: {np.round(column.std().to_numpy()[0], round_num)}\n')
+        else:
+            column = get_ecg_data_column(ecg_type=ecg, column=feature)
+            print(f'Statistics for {name} {util.df_column_name(feature)}:')
             print(f'Count: {int(column.count().to_numpy()[0])}')
             print(f'Mean: {np.round(column.mean().to_numpy()[0], round_num)}')
             print(f'Mode: {np.round(column.mode().to_numpy(), round_num)}')
@@ -27,52 +37,104 @@ def basic_stats(ecg: TypeECG, round_num: int=4) -> None:
             print(f'Standard Deviation: {np.round(column.std().to_numpy()[0], round_num)}\n')
 
 
-def calculate_mse() -> None:
+
+def calculate_mse(split_leads: bool=True, rounding_digits: int=6) -> None:
     """
     Calculate mean squared error (MSE) and root mean squared error (RMSE).
     :return: None
     """
     features = util.feature_columns()
     for feature in features:
-        for lead in range(TOTAL_NUM_LEADS):
-            org = get_ecg_data_column(TypeECG.ORIGINAL, feature, lead)
-            rec = get_ecg_data_column(TypeECG.RECONSTRUCTED, feature, lead)
+        if split_leads:
+            for lead in range(TOTAL_NUM_LEADS):
+                org = get_ecg_data_column(TypeECG.ORIGINAL, feature, lead)
+                rec = get_ecg_data_column(TypeECG.RECONSTRUCTED, feature, lead)
+                diff = (org - rec) ** 2
+                mse = diff.sum() / len(diff)
+                print(f'Mean squared error for {util.df_column_name(feature)} lead {LEAD_LABELS[lead]}: {round(mse.to_numpy()[0], rounding_digits)}')
+                rmse = np.sqrt(mse)
+                print(f'RMSE for {util.df_column_name(feature)} lead {LEAD_LABELS[lead]}: {round(rmse.to_numpy()[0], rounding_digits)}')
+        else:
+            org = get_ecg_data_column(TypeECG.ORIGINAL, feature)
+            rec = get_ecg_data_column(TypeECG.RECONSTRUCTED, feature)
             diff = (org - rec) ** 2
             mse = diff.sum() / len(diff)
-            print(f'Mean squared error for {util.df_column_name(feature)} lead {LEAD_LABELS[lead]}: {mse.to_numpy()[0]}')
+            print(
+                f'Mean squared error for {util.df_column_name(feature)}: {round(mse.to_numpy()[0], rounding_digits)}')
             rmse = np.sqrt(mse)
-            print(f'RMSE for {util.df_column_name(feature)} lead {LEAD_LABELS[lead]}: {rmse.to_numpy()[0]}')
+            print(f'RMSE for {util.df_column_name(feature)}: {round(rmse.to_numpy()[0], rounding_digits)}')
     print()
 
 
-def calculate_mae() -> None:
+def calculate_mae(split_leads: bool=True, rounding_digits: int=6) -> None:
     """
     Calculate mean absolute error (MAE).
     :return: None
     """
     features = util.feature_columns()
     for feature in features:
-        org = get_ecg_data_column(TypeECG.ORIGINAL, feature)
-        rec = get_ecg_data_column(TypeECG.RECONSTRUCTED, feature)
-        diff = np.abs(org - rec)
-        mae = diff.sum() / len(diff)
-        print(f'Mean absolute error for {util.df_column_name(feature)}: {mae.to_numpy()}')
+        if split_leads:
+            for lead in range(TOTAL_NUM_LEADS):
+                org = get_ecg_data_column(TypeECG.ORIGINAL, feature, lead)
+                rec = get_ecg_data_column(TypeECG.RECONSTRUCTED, feature, lead)
+                diff = np.abs(org - rec)
+                mae = diff.sum() / len(diff)
+                print(f'Mean absolute error for {util.df_column_name(feature)} {LEAD_LABELS[lead]}: {round(mae.to_numpy()[0], rounding_digits)}')
+        else:
+            org = get_ecg_data_column(TypeECG.ORIGINAL, feature)
+            rec = get_ecg_data_column(TypeECG.RECONSTRUCTED, feature)
+            diff = np.abs(org - rec)
+            mae = diff.sum() / len(diff)
+            print(f'Mean absolute error for {util.df_column_name(feature)}: {round(mae.to_numpy()[0], rounding_digits)}')
     print()
 
 
-def confidence_interval() -> None:
+def percentiles(use_all_leads: bool=True,rounding_digits: int=6):
+    features = util.feature_columns()
+    for feature in features:
+        if use_all_leads:
+            for lead in range(TOTAL_NUM_LEADS):
+                org = get_ecg_data_column(TypeECG.ORIGINAL, feature, lead)
+                rec = get_ecg_data_column(TypeECG.RECONSTRUCTED, feature, lead)
+                percents = [5, 10, 90, 95]
+                org_dist = np.percentile(org, percents)
+                rec_dist = np.percentile(rec, percents)
+                dist = org_dist - rec_dist
+                for index, percent in enumerate(percents):
+                    print(f'{percent}% percentile distribution {util.df_column_name(feature)} {LEAD_LABELS[lead]}: '
+                          f'{round(dist[index], rounding_digits)}')
+                print()
+        else:
+            org = get_ecg_data_column(TypeECG.ORIGINAL, feature)
+            rec = get_ecg_data_column(TypeECG.RECONSTRUCTED, feature)
+            percents = [5, 10, 90, 95]
+            org_dist = np.percentile(org, percents)
+            rec_dist = np.percentile(rec, percents)
+            dist = org_dist - rec_dist
+            for index, percent in enumerate(percents):
+                print(f'{percent}% percentile distribution {util.df_column_name(feature)}: '
+                      f'{round(dist[index], rounding_digits)}')
+
+
+
+def confidence_interval(confidence: float=0.95, rounding_digits: int=6) -> None:
     """
     Calculate confidence interval.
+    :param confidence: Confidence interval, defaults to 0.95.
+    :param rounding_digits: Rounding digits, defaults to 6.
     :return: None
     """
     features = util.feature_columns()
-    confidence = 0.95
+    assert 0 <= confidence <= 1, 'Confidence interval must be between 0 and 1'
     for feature in features:
         org = get_ecg_data_column(TypeECG.ORIGINAL, feature)
         rec = get_ecg_data_column(TypeECG.RECONSTRUCTED, feature)
         diff = org - rec
         interval = stats.norm.interval(confidence=confidence, loc=diff.mean(), scale=stats.sem(diff))
-        print(f'{int(confidence*100)}% confidence interval for {util.df_column_name(feature)}: {interval}')
+        lower = interval[0]
+        upper = interval[1]
+        print(f'{int(confidence*100)}% confidence interval for '
+              f'{util.df_column_name(feature)}: [{round(lower[0], rounding_digits)}, {round(upper[0], rounding_digits)}]')
     print()
 
 
@@ -133,9 +195,9 @@ def check_significant_difference(p: float, test: str, column: str=None) -> None:
     alpha = 0.05
     diff = 'Significant difference' if p < alpha else 'Not significant difference'
     if column is None:
-        print(f'{test}: {diff}')
+        print(f'{test}: {diff} (p_val: {p})')
     else:
-        print(f'{test}: {diff} for {util.df_column_name(column)}')
+        print(f'{test}: {diff} for {util.df_column_name(column)} (p_val: {p})')
 
 
 def pearson_correlation(
@@ -165,6 +227,7 @@ def pearson_correlation(
             org = get_ecg_data_column(TypeECG.ORIGINAL, feature)
             rec = get_ecg_data_column(TypeECG.RECONSTRUCTED, feature)
             corr, p_val = stats.pearsonr(rec, org)
+            print(p_val)
             print(f'Pearson correlation: {corr[0]:.6f} for column {util.df_column_name(feature)}')
             if sig_diff:
                 check_significant_difference(p_val, 'Pearson correlation', feature)

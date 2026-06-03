@@ -10,7 +10,7 @@ on a single page.
 introduce additional artifacts such as rotation, skew, and distortion.
 
 In previous research it has been shown that it is possible to restore the 2.5 seconds 12-lead digital ECG
-from paper ECG [[Stenhede 2024]](https://www.cinc.org/archives/2024/pdf/CinC2024-262.pdf) and the aim of this project is to reconstruct the 10 second signal
+from paper ECG [[Stenhede 2024]](https://www.cinc.org/archives/2024/pdf/CinC2024-262.pdf) and the aim of this project is to reconstruct the 10-second signal
 from the 2.5 second ECG, which will enhance the usability of historical ECGs.
 
 ## Install
@@ -28,3 +28,60 @@ from the 2.5 second ECG, which will enhance the usability of historical ECGs.
     ```shell
     mkdir input
     ```
+   
+## Running the program
+The main.py file has three main modes: processing ECGs, getting statistics from processed ECGs and plotting processed ECGs. 
+When processing ECGs data is saved using SQLite so that it is easy to do analysis or plotting. It is also possible to save the data to a CSV file, but if there is a lot of data CSV may be very slow to use. Using SQLite also saves the ECG signal for each ECG and lead, but since this massively increases the file size, it is not available for saving to CSV files. The ECG signal is only used for plotting the original and reconstructed signals overlaid.  
+The file [util.py](util.py) contains multiple variables that may need to be changed for your data, such as the number of leads used, the number of ECGs and which leads were used. 
+
+### Processing ECGs
+Running the processing pipeline for all ECGs and leads:
+```shell
+python --process_ecg
+```
+
+To save the processed data using SQLite include:
+```shell
+python --process_ecg --save_db
+```
+
+To only do a subset of the ECGs or leads, use:
+```shell
+python --process_ecg --ecg_end=100 --lead_end=3
+```
+This will only process the first 100 ECGs and the first three leads.
+
+To use a different delineate method and processing method use:
+```shell
+python --process_ecg --process_method=neurokit --delineate_method=dwt
+```
+Only the $\texttt{dwt}$ and $\texttt{cwt}$ methods are supported for delineating, since the other options result in different output dataframes that don't feature some of the necessary columns that are needed for this project. 
+
+### Visualizing ECGs
+**This requires the ECGs to have been processed**.
+
+Running the visualizing pipeline for all ECGs and leads:
+```shell
+python --visualize_ecg
+```
+
+To save the plots include:
+```shell
+python --visualize_ecg --save_plots
+```
+
+### Statistics
+**This requires the ECGs to have been processed**.
+
+Running the statistics pipeline:
+```shell
+python --stats
+```
+
+### Splitting the data to individual CSV files for leads
+**This requires the ECGs to have been processed**.
+
+To split the data to individual CSV files for a CSV file for each lead use:
+```shell
+python split_data
+```

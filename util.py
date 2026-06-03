@@ -1,21 +1,21 @@
-SAMPLING_RATE = 100  # Hz
+SAMPLING_RATE = 500  # Hz
 # The leads used for the data
 LEAD_LABELS = [
     'I', 'II', 'III',
-    #'aVR', 'aVL', 'aVF',
+    'aVR', 'aVL', 'aVF',
     'V1', 'V2', 'V3',
     'V4', 'V5', 'V6',
 ]
 TOTAL_NUM_LEADS = len(LEAD_LABELS)
 # The number of ECGs in the dataset
-TOTAL_NUM_ECGS = 7072#4368
+TOTAL_NUM_ECGS = 4368#7072
 # The database file to save ECG data to, will be prepended by `org_` or `rec_` depending on the data
 DB_FILE = 'ecg_data.db'
 # The name of the table in the db
 TABLE_NAME = 'ecg_data'
 # Make an inner directory in the output/ dir, useful if you're working
 # on multiple projects at the same time
-INNER_OUTPUT_DIR = 'other_project'
+INNER_OUTPUT_DIR = ''
 
 
 def df_column_name(column: str) -> str:

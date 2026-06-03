@@ -19,7 +19,7 @@ class TypeECG(Enum):
 class ECG:
     def __init__(self, input_data: Any, type_ecg: TypeECG, data_column: str=None):
         """
-
+        Constructor for ECG class.
         :param input_data: The input file, either .npy or .npz.
         :param type_ecg: If it's original or reconstructed data.
         :param data_column: If the input data has multiple columns, such as if it contains both the
@@ -59,9 +59,11 @@ class ECG:
     def __eq__(self, other) -> bool | Exception:
         """
         Compare the shape of the data as both the original and reconstructed data should have the same shape.
-        The shape is the number of ECGs, leads and samples for the ECG objects.
+        The shape is the number of ECGs, leads and samples for the ECG objects. This can be useful if you're
+        working with original and reconstructed data at the same time.
         :param other: The other ECG object.
-        :return:
+        :return: True if the shape of the data is equal, False otherwise. If the other object is not an ECG object,
+            return NotImplemented instead.
         """
         if not isinstance(other, self.__class__):
             return NotImplemented
@@ -242,18 +244,19 @@ class ECG:
                 num = f'{self.get_ecg_type()} ECG {ecg_num} {LEAD_LABELS[lead_num]}'
                 print(f'{num} quality (mean±std): {np.mean(ecg_quality):.3f} ± {np.std(ecg_quality):.3f}')
         signals, r_peaks = nk.ecg_process(ecg, sampling_rate=SAMPLING_RATE, method=params['process_method'])
-        if params['use_segment']:
-            nk.ecg_segment(ecg, sampling_rate=SAMPLING_RATE, show=True)
-            x = y = 0.02
-            plt.figtext(x, y, f'{self.get_ecg_type()} ECG {ecg_num} Lead {LEAD_LABELS[lead_num]}')
-            plt.grid(True, alpha=0.3)
-            plt.show()
+        if 'use_segment' in kwargs:
+            if kwargs['use_segment']:
+                nk.ecg_segment(ecg, sampling_rate=SAMPLING_RATE, show=True)
+                x = y = 0.02
+                plt.figtext(x, y, f'{self.get_ecg_type()} ECG {ecg_num} Lead {LEAD_LABELS[lead_num]}')
+                plt.grid(True, alpha=0.3)
+                plt.show()
         r_peak_tops = ecg[r_peaks["ECG_R_Peaks"]]
         return ecg, signals, r_peaks, r_peak_tops
 
     def get_ecg(self, ecg_num: int, lead_num: int):
         """
-        Get and clean a single ECG signal.
+        Get a single ECG signal.
         :param ecg_num: The index of the ECG signal.
         :param lead_num: The lead to plot.
         :return: ECG signal.
@@ -267,45 +270,26 @@ class ECG:
 
     def check_boundaries(self, ecg_num, lead_num) -> None:
         """
-        Check if the ECG signal has the required boundaries. For example there is only 12 leads
-        so trying to use lead 13 which doesn't exist raises an error.
+        Check if the ECG signal has the required boundaries. For example if you're working with 12 leads
+        then trying to use lead 13 which doesn't exist raises an error.
         :param ecg_num: The index of the ECG signal.
         :param lead_num: The lead.
         :return: None
         """
-        n, t, c = self.get_shape()  # (N, T, C) -> (4368, 5000, 12)
+        n, t, c = self.get_shape()  # (N, T, C) -> (number of ECGs, signal samples, number of leads)
         if not 0 <= ecg_num < n:
             raise IndexError(f'ECG signal index {ecg_num} out of range [0, {n - 1}]')
         if not 0 <= lead_num < c:
             raise IndexError(f'Lead number {lead_num} out of range [0, {c - 1}]')
 
-    def get_ecg_type(self):
+    def get_ecg_type(self) -> str:
         """
         Print the ECG type where only the first letter is capitalized.
-        :return:
+        :return: ECG type.
         """
         return self.type_ecg.name[0] + self.type_ecg.name[1:].lower()
 
-    def rr_to_bpm(self, df, ecg_num=0, lead_num=0):
-        """
-        Print the mean heart rate using the RR-mean for an ECG signal.
-        :param df: The dataframe with the RR-interval data.
-        :param ecg_num: The ECG signal index.
-        :param lead_num: The lead.
-        :return: None
-        """
-        if self.type_ecg == TypeECG.ORIGINAL:
-            row = df.loc[('Original', ecg_num, LEAD_LABELS[lead_num])]
-        else:
-            row = df.loc[('Reconstructed', ecg_num, LEAD_LABELS[lead_num])]
-        rr_ms = float(row['rr_interval_mean'])
-        hr_bpm = 60000.0 / rr_ms
-        if hr_bpm < 0.0:
-            hr_bpm = float('nan')
-        print(f'{self.get_ecg_type()} ECG {ecg_num} lead {LEAD_LABELS[lead_num]}: '
-              f'RR mean: {rr_ms:.1f} ms - HR mean: {hr_bpm:.1f} BPM')
-
-    def find_ecg_peaks(self, df, params):
+    def find_ecg_peaks(self, df: pd.DataFrame, params: dict[str, Any]) -> None:
         """
         Find the peaks of the ECG signals.
         :param df: The dataframe to save the ECG peaks to.
@@ -327,12 +311,13 @@ class ECG:
                     r_peaks = self.get_r_peaks(ecg, lead)
                     try:
                         if params['use_show']:
-                            _, waves = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
-                                                        method=params['delineate_method'], show=True, show_type='all')
-                            plt.grid(True, alpha=0.3)
-                            plt.title(f'Delineated {self.get_ecg_type()} ECG {ecg} - lead {LEAD_LABELS[lead]}')
-                            plt.show()
-                            plt.close()
+                            if ecg == 0:
+                                _, waves = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
+                                                            method=params['delineate_method'], show=True, show_type='peaks')
+                                plt.grid(True, alpha=0.3)
+                                plt.title(f'Delineated {self.get_ecg_type()} ECG {ecg} - lead {LEAD_LABELS[lead]}')
+                                plt.show()
+                                plt.close()
                         else:
                             _, waves = nk.ecg_delineate(current_ecg, r_peaks, sampling_rate=SAMPLING_RATE,
                                                         method=params['delineate_method'], show=False, show_type='all')
@@ -373,19 +358,19 @@ class ECG:
                     df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'ecg_signal'] = json.dumps(current_ecg.tolist())
                     df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'r_peaks'] = json.dumps(r_peaks.tolist())
                 if ecg % 100 == 0:
-                    print(f'Processed {ecg} ECG peaks out of {TOTAL_NUM_ECGS} ECGs ({int((ecg/TOTAL_NUM_ECGS)*100)}%)')
+                    print(f'Found {ecg} ECG peaks out of {TOTAL_NUM_ECGS} ECGs ({int((ecg/TOTAL_NUM_ECGS)*100)}%)')
 
     @staticmethod
-    def convert_array(x):
+    def convert_array(x: Any) -> np.ndarray:
         """
         The list data retrieved from the delineate function needs to be converted to a numpy array for finding intervals.
         :param x:
-        :return:
+        :return: Numpy array.
         """
         arr = np.asarray(x, dtype=float)
         return arr.ravel()
 
-    def validate_data(self, data1, data2):
+    def validate_data(self, data1: Any, data2: Any) -> np.ndarray:
         """
         When finding intervals, the interval columns must be converted to numpy arrays. Then they are made equal length
         so that each value in the arrays can be compared. Finally, the arrays are checked for NaN values and all
@@ -404,16 +389,24 @@ class ECG:
         samples = data2[valid_mask] - data1[valid_mask]
         return samples
 
-    def calculate_qt_intervals(self, df, ecg, lead, q_onsets, t_offsets, print_mean):
+    def calculate_qt_intervals(
+            self,
+            df: pd.DataFrame,
+            ecg: int,
+            lead: int,
+            q_onsets,
+            t_offsets,
+            print_mean
+    ) -> None:
         """
         Calculate the QT intervals using the QRS-onset and T-offset.
-        :param df:
-        :param ecg:
-        :param lead:
-        :param q_onsets:
-        :param t_offsets:
-        :param print_mean:
-        :return:
+        :param df: The dataframe with ECG data.
+        :param ecg: The ECG signal index.
+        :param lead: The lead index.
+        :param q_onsets: The Q onsets.
+        :param t_offsets: The T offsets.
+        :param print_mean: Print mean values.
+        :return: None.
         """
         samples = self.validate_data(q_onsets, t_offsets)
         qt_ms = (samples / SAMPLING_RATE) * 1000  # Convert to milliseconds
@@ -423,7 +416,7 @@ class ECG:
             print(f'QT mean for {self.get_ecg_type()} ECG {ecg} {LEAD_LABELS[lead]}: {qt_mean:.4f} ms')
         df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'qt_interval_mean'] = qt_mean
 
-    def calculate_pr_intervals(self, df, ecg, lead, p_onsets, q_onsets):
+    def calculate_pr_intervals(self, df, ecg, lead, p_onsets, q_onsets) -> None:
         """
         Calculate the PR intervals using the P-onset and QRS-onset.
         :param df:
@@ -437,15 +430,23 @@ class ECG:
         pr_mean = float(np.nanmean(pr_ms)) if pr_ms.size else np.nan
         df.loc[(self.get_ecg_type(), ecg, LEAD_LABELS[lead]), 'pr_interval_mean'] = pr_mean
 
-    def pair_pr_intervals(self, p_onsets, q_onsets, fs, min_ms=100.0, max_ms=240.0):
+    def pair_pr_intervals(
+            self,
+            p_onsets: Any,
+            q_onsets: Any,
+            fs: int,
+            min_ms:
+            float=100.0,
+            max_ms: float=240.0
+    ) -> np.ndarray:
         """
-
-        :param p_onsets:
-        :param q_onsets:
-        :param fs:
-        :param min_ms:
-        :param max_ms:
-        :return:
+        Pair the PR intervals using the P-onset and Q-onset.
+        :param p_onsets: P-onset intervals.
+        :param q_onsets: Q-onset intervals.
+        :param fs: Sampling rate.
+        :param min_ms: Minimum ms.
+        :param max_ms: Maximum ms.
+        :return: pd.DataFrame.
         """
         p_arr = self.convert_array(p_onsets); p_arr = p_arr[~np.isnan(p_arr)]
         q_arr = self.convert_array(q_onsets); q_arr = q_arr[~np.isnan(q_arr)]
@@ -467,7 +468,7 @@ class ECG:
 
 
     @staticmethod
-    def nan_threshold(peaks, threshold=0.20) -> list[int]:
+    def nan_threshold(peaks: Any, threshold: int=0.20) -> list[int]:
         """
         If an ECG has any NaNs in the T, P, Q or S column it will lead to NaN in the df/db, so we
         check for NaN and if it's below a threshold they are dropped, otherwise we keep it in.
@@ -484,7 +485,25 @@ class ECG:
                 peaks = [x for x in peaks if x == x]
         return peaks
 
-    def value_mean_t(self, df, ecg, lead, current_ecg, waves_peak, print_exception=False):
+    def value_mean_t(
+            self,
+            df: pd.DataFrame,
+            ecg: int,
+            lead: int,
+            current_ecg: Any,
+            waves_peak: Any,
+            print_exception: bool=False
+    ) -> None:
+        """
+        Calculate the mean of the T peaks.
+        :param df: Dataframe with ECG data.
+        :param ecg: ECG index.
+        :param lead: Lead index.
+        :param current_ecg: The current ECG.
+        :param waves_peak: Dictionary with T peak information.
+        :param print_exception: Print IndexError exception if True.
+        :return: None.
+        """
         try:
             peaks = waves_peak["ECG_T_Peaks"]
             peaks = self.nan_threshold(peaks)
@@ -495,7 +514,25 @@ class ECG:
             if print_exception:
                 print(f'Error finding T-peak mean for {self.get_ecg_type()} ECG {ecg} lead {LEAD_LABELS[lead]}:\n\t{e}')
 
-    def value_mean_p(self, df, ecg, lead, current_ecg, waves_peak, print_exception=False):
+    def value_mean_p(
+            self,
+            df: pd.DataFrame,
+            ecg: int,
+            lead: int,
+            current_ecg: Any,
+            waves_peak: Any,
+            print_exception: bool=False
+    ) -> None:
+        """
+        Calculate the mean of the P peaks.
+        :param df: Dataframe with ECG data.
+        :param ecg: ECG index.
+        :param lead: Lead index.
+        :param current_ecg: The current ECG.
+        :param waves_peak: Dictionary with P peak information.
+        :param print_exception: Print IndexError exception if True.
+        :return: None.
+        """
         try:
             peaks = waves_peak["ECG_P_Peaks"]
             peaks = self.nan_threshold(peaks)
@@ -506,7 +543,25 @@ class ECG:
             if print_exception:
                 print(f'Error finding P-peaks for {self.get_ecg_type()} ECG {ecg} lead {LEAD_LABELS[lead]}:\n\t{e}')
 
-    def value_mean_q(self, df, ecg, lead, current_ecg, waves_peak, print_exception=False):
+    def value_mean_q(
+            self,
+            df: pd.DataFrame,
+            ecg: int,
+            lead: int,
+            current_ecg: Any,
+            waves_peak: Any,
+            print_exception: bool=False
+    ) -> None:
+        """
+        Calculate the mean of the Q peaks.
+        :param df: Dataframe with ECG data.
+        :param ecg: ECG index.
+        :param lead: Lead index.
+        :param current_ecg: The current ECG.
+        :param waves_peak: Dictionary with Q peak information.
+        :param print_exception: Print IndexError exception if True.
+        :return: None.
+        """
         try:
             peaks = waves_peak["ECG_Q_Peaks"]
             peaks = self.nan_threshold(peaks)
@@ -517,7 +572,25 @@ class ECG:
             if print_exception:
                 print(f'Error finding Q-peaks for {self.get_ecg_type()} ECG {ecg} lead {LEAD_LABELS[lead]}:\n\t{e}')
 
-    def value_mean_s(self, df, ecg, lead, current_ecg, waves_peak, print_exception=False):
+    def value_mean_s(
+            self,
+            df: pd.DataFrame,
+            ecg: int,
+            lead: int,
+            current_ecg: Any,
+            waves_peak: Any,
+            print_exception: bool=False
+    ) -> None:
+        """
+        Calculate the mean of the S peaks.
+        :param df: Dataframe with ECG data.
+        :param ecg: ECG index.
+        :param lead: Lead index.
+        :param current_ecg: The current ECG.
+        :param waves_peak: Dictionary with S peak information.
+        :param print_exception: Print IndexError exception if True.
+        :return: None.
+        """
         try:
             peaks = waves_peak["ECG_S_Peaks"]
             peaks = self.nan_threshold(peaks)

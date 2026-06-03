@@ -26,6 +26,13 @@ def save_to_db(df: pd.DataFrame, ecg_type: TypeECG, name: str=None) -> None:
 
 
 def get_ecg_data_column(ecg_type: TypeECG, column: str, lead: int=None) -> pd.DataFrame:
+    """
+    Get a column of ECG data.
+    :param ecg_type: The type of ECG to use.
+    :param column: The column to get.
+    :param lead: Get column data of a specific lead.
+    :return: A column of ECG data.
+    """
     db = 'org_' + DB_FILE if ecg_type == ecg_type.ORIGINAL else 'rec_' + DB_FILE
     with sqlite3.connect(create_output_dir() + db) as conn:
         if lead is not None:
@@ -43,7 +50,7 @@ def get_ecg_data(ecg_type: TypeECG, lead: int=None) -> pd.DataFrame:
     ECG data for only that lead.
     :param ecg_type: The type of ecg data to get.
     :param lead: The lead to use.
-    :return:
+    :return: ECG data.
     """
     db = 'org_' + DB_FILE if ecg_type == ecg_type.ORIGINAL else 'rec_' + DB_FILE
     with sqlite3.connect(create_output_dir() + db) as conn:
@@ -75,8 +82,8 @@ def get_unsuccessful_ecgs(ecg_type: TypeECG=None) -> pd.DataFrame:
     Get all unsuccessful ECGs. By not providing a type for the ECG, assume you're after
     a db file with both original and reconstructed data. Otherwise, the ECG type is used
     if the original and reconstructed data is in different db files.
-    :param ecg_type:
-    :return:
+    :param ecg_type: Original or reconstructed ECG type.
+    :return: DataFrame of unsuccessful ECGs.
     """
     if ecg_type is None:
         db = DB_FILE
@@ -157,9 +164,9 @@ def handle_nan(df: pd.DataFrame, ecg_type: TypeECG) -> pd.DataFrame:
     """
     Some columns end up with NaN values, in this case they are replaced with the mean of the column. The
     number of NaNs per column is written to a file before being handled.
-    :param df:
-    :param ecg_type:
-    :return:
+    :param df: Dataframe with ECG data.
+    :param ecg_type: The type of ECG in the data.
+    :return: Dataframe without NaN values.
     """
     list_of_nan_columns = feature_columns()
     prepend = 'org_' if ecg_type == ecg_type.ORIGINAL else 'rec_'
@@ -167,8 +174,8 @@ def handle_nan(df: pd.DataFrame, ecg_type: TypeECG) -> pd.DataFrame:
     open(create_output_dir() + prepend + 'number_of_nans_in_dataframe' + '.txt', 'w').close()
     for column in list_of_nan_columns:
         with open(create_output_dir() + prepend + 'number_of_nans_in_dataframe' + '.txt', 'a') as file:
-            num_nan_percent = round((df[column].isna().sum() / len(df[column])) * 100)
-            file.write(f'Column {column} has {df[column].isna().sum()} NaN out of {len(df[column])} values '
+            num_nan_percent = int((df[column].isna().sum() / len(df[column])) * 100)
+            file.write(f'Column {df_column_name(column)} has {df[column].isna().sum()} NaN out of {len(df[column])} values '
                        f'({num_nan_percent}%)\n')
         imputer = SimpleImputer(missing_values=np.nan, strategy='mean')
         df[column] = imputer.fit_transform(df[[column]])
